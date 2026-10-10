@@ -14,7 +14,6 @@ Local-first product roadmap as markdown, synced to **GitHub Issues** and
 After a release is published:
 
 ```bash
-# Linux x86_64 example — adjust tag, OS, and arch
 VERSION=v0.1.0
 curl -fsSL -o roadmap.tar.gz \
   "https://github.com/OWNER/roadmap/releases/download/${VERSION}/roadmap-${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
@@ -116,7 +115,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-GitHub Actions builds Linux, macOS, and Windows artifacts and creates a Release.
+GitHub Actions builds a Linux (`x86_64-unknown-linux-gnu`) artifact and creates a Release.
 
 ## License
 

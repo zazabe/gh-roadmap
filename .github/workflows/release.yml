@@ -10,92 +10,39 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  TARGET: x86_64-unknown-linux-gnu
 
 jobs:
-  build:
-    name: ${{ matrix.target }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            archive: tar.gz
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            archive: tar.gz
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            archive: tar.gz
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            archive: zip
-
+  release:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ env.TARGET }}
 
       - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
 
       - name: Build
-        run: cargo build --release --locked --bin roadmap --target ${{ matrix.target }}
+        run: cargo build --release --locked --bin roadmap --target ${{ env.TARGET }}
 
       - name: Package
-        shell: bash
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME}"
-          BIN="roadmap"
-          EXT=""
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            EXT=".exe"
-          fi
-          SRC="target/${{ matrix.target }}/release/${BIN}${EXT}"
           STAGE="dist"
           mkdir -p "${STAGE}"
-          cp "${SRC}" "${STAGE}/${BIN}${EXT}"
+          cp "target/${TARGET}/release/roadmap" "${STAGE}/roadmap"
           cp LICENSE README.md "${STAGE}/"
-          ASSET="roadmap-${VERSION}-${{ matrix.target }}"
-          if [[ "${{ matrix.archive }}" == "zip" ]]; then
-            tar -a -cf "${ASSET}.zip" -C "${STAGE}" "${BIN}${EXT}" LICENSE README.md
-            echo "ASSET_PATH=${ASSET}.zip" >> "${GITHUB_ENV}"
-          else
-            tar -czf "${ASSET}.tar.gz" -C "${STAGE}" "${BIN}${EXT}" LICENSE README.md
-            echo "ASSET_PATH=${ASSET}.tar.gz" >> "${GITHUB_ENV}"
-          fi
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.target }}
-          path: ${{ env.ASSET_PATH }}
-
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Collect assets
-        run: |
-          mkdir -p release-assets
-          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} release-assets/ \;
-          ls -la release-assets
+          ASSET="roadmap-${VERSION}-${TARGET}.tar.gz"
+          tar -czf "${ASSET}" -C "${STAGE}" roadmap LICENSE README.md
+          echo "ASSET_PATH=${ASSET}" >> "${GITHUB_ENV}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release-assets/*
+          files: ${{ env.ASSET_PATH }}
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
