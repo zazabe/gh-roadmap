@@ -1,0 +1,5 @@
+/target/
+# Local product roadmap mounts (starter lives in examples/basic/roadmap)
+/roadmap/
+*.swp
+.DS_Store

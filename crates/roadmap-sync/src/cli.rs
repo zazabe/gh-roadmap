@@ -1,0 +1,46 @@
+use std::path::PathBuf;
+
+use clap::{Parser, Subcommand};
+
+#[derive(Debug, Parser)]
+#[command(name = "roadmap", about = "Sync local roadmap markdown with a work-tracking platform")]
+pub struct Cli {
+    /// Roadmap root directory (contains milestones/, issues/, roadmap.toml)
+    #[arg(long, default_value = "roadmap", global = true)]
+    pub roadmap_dir: PathBuf,
+
+    #[command(subcommand)]
+    pub command: Command,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum Command {
+    /// Validate local roadmap files (no network)
+    Validate,
+    /// Show planned sync actions (dry-run)
+    Plan {
+        /// Use only local files and sync-map (no GitHub prefetch)
+        #[arg(long)]
+        offline: bool,
+    },
+    /// Check GitHub authentication and token permissions
+    Doctor,
+    /// Apply planned actions to the remote platform
+    Apply {
+        /// Skip confirmation prompt
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Pull issue bodies + project field changes from GitHub into local markdown
+    Pull {
+        /// Skip confirmation prompt
+        #[arg(long)]
+        yes: bool,
+        /// Overwrite local field values with remote values
+        #[arg(long)]
+        overwrite: bool,
+        /// Import missing remote milestones/issues into local markdown
+        #[arg(long)]
+        import_missing: bool,
+    },
+}

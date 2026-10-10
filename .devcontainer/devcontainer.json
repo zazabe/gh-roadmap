@@ -1,0 +1,36 @@
+{
+    "name": "roadmap",
+    "build": {
+        "dockerfile": "./Dockerfile",
+        "context": "."
+    },
+    "features": {
+        "ghcr.io/devcontainers/features/common-utils:2": {
+            "installZsh": "true",
+            "username": "dev",
+            "userUid": "1000",
+            "userGid": "1001",
+            "upgradePackages": "true"
+        },
+        "ghcr.io/devcontainers/features/rust:1": "latest",
+        "ghcr.io/devcontainers/features/github-cli:1": {}
+    },
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "terminal.integrated.defaultProfile.linux": "bash",
+                "rust-analyzer.linkedProjects": [
+                    "Cargo.toml"
+                ]
+            },
+            "extensions": [
+                "rust-lang.rust-analyzer",
+                "tamasfe.even-better-toml"
+            ]
+        }
+    },
+    "remoteUser": "dev",
+    "mounts": [
+        "source=roadmap-gh-home,target=/home/dev,type=volume"
+    ]
+}

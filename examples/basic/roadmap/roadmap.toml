@@ -1,0 +1,16 @@
+[platform]
+kind = "github"
+
+[platform.github]
+host = "github.com"
+# Your GitHub org or user login
+owner = "YOUR_ORG"
+# Projects (v2) board number — find with: gh project list --owner YOUR_ORG
+project_number = 1
+# Hub repo where epic issues are created
+hub_repo = "roadmap"
+
+[platform.github.repos]
+# Frontmatter `repo:` key → GitHub repo name (without owner)
+app = "app"
+roadmap = "roadmap"
