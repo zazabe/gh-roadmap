@@ -97,11 +97,8 @@ pub fn print_report(report: &DoctorReport, config: &RoadmapConfig) {
         eprintln!();
         eprintln!("Fine-grained PAT requirements:");
         if let Ok(github) = config.github() {
-            let repos: Vec<_> = github
-                .repos
-                .values()
-                .map(|slug| format!("{}/{}", github.owner, slug))
-                .collect();
+            let repos: Vec<_> =
+                github.repos.values().map(|slug| format!("{}/{}", github.owner, slug)).collect();
             eprintln!("  - Repository access: {}", repos.join(", "));
             eprintln!("  - Repository permissions > Issues: Read and write");
             eprintln!(

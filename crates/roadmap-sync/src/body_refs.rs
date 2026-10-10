@@ -109,9 +109,7 @@ fn is_valid_local_ref_token(token: &str) -> bool {
     if token.is_empty() {
         return false;
     }
-    token
-        .chars()
-        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+    token.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
 }
 
 pub fn find_backticked_github_refs(body: &str) -> Vec<String> {
@@ -138,12 +136,18 @@ pub fn find_unqualified_github_refs(body: &str) -> Vec<String> {
     out.into_iter().collect()
 }
 
-fn normalize_github_ticket_refs(body: &str, full_repo_by_alias: &HashMap<String, String>) -> String {
+fn normalize_github_ticket_refs(
+    body: &str,
+    full_repo_by_alias: &HashMap<String, String>,
+) -> String {
     let unquoted = unquote_backticked_github_refs(body, full_repo_by_alias);
     rewrite_plain_github_refs(&unquoted, full_repo_by_alias)
 }
 
-fn unquote_backticked_github_refs(body: &str, full_repo_by_alias: &HashMap<String, String>) -> String {
+fn unquote_backticked_github_refs(
+    body: &str,
+    full_repo_by_alias: &HashMap<String, String>,
+) -> String {
     let mut out = String::with_capacity(body.len());
     let chars: Vec<(usize, char)> = body.char_indices().collect();
     let mut idx = 0usize;
@@ -167,11 +171,8 @@ fn unquote_backticked_github_refs(body: &str, full_repo_by_alias: &HashMap<Strin
             continue;
         }
 
-        let token_start_byte = if token_start_char < chars.len() {
-            chars[token_start_char].0
-        } else {
-            body.len()
-        };
+        let token_start_byte =
+            if token_start_char < chars.len() { chars[token_start_char].0 } else { body.len() };
         let token_end_byte = chars[end_char].0;
         let token = &body[token_start_byte..token_end_byte];
         if is_valid_github_ref_token(token) {
@@ -235,11 +236,8 @@ fn backticked_tokens(body: &str) -> Vec<&str> {
             idx += 1;
             continue;
         }
-        let token_start_byte = if token_start_char < chars.len() {
-            chars[token_start_char].0
-        } else {
-            body.len()
-        };
+        let token_start_byte =
+            if token_start_char < chars.len() { chars[token_start_char].0 } else { body.len() };
         let token_end_byte = chars[end_char].0;
         out.push(&body[token_start_byte..token_end_byte]);
         idx = end_char + 1;
@@ -279,9 +277,10 @@ fn is_valid_github_ref_token(token: &str) -> bool {
     if repo.is_empty() || number.is_empty() {
         return false;
     }
-    if !repo.chars().all(|c| {
-        c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_' || c == '/'
-    }) {
+    if !repo
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_' || c == '/')
+    {
         return false;
     }
     number.chars().all(|c| c.is_ascii_digit())
@@ -301,7 +300,12 @@ fn normalize_ref_token(token: &str, full_repo_by_alias: &HashMap<String, String>
 }
 
 fn is_ref_char(ch: char) -> bool {
-    ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-' || ch == '_' || ch == '/' || ch == '#'
+    ch.is_ascii_lowercase()
+        || ch.is_ascii_digit()
+        || ch == '-'
+        || ch == '_'
+        || ch == '/'
+        || ch == '#'
 }
 
 fn byte_at_or_end(chars: &[(usize, char)], idx: usize, end: usize) -> usize {
@@ -365,9 +369,8 @@ mod tests {
 
     #[test]
     fn finds_unqualified_refs() {
-        let refs = find_unqualified_github_refs(
-            "Use app#43 and example/platform#95 plus `platform#94`.",
-        );
+        let refs =
+            find_unqualified_github_refs("Use app#43 and example/platform#95 plus `platform#94`.");
         assert_eq!(refs, vec!["app#43".to_string(), "platform#94".to_string()]);
     }
 }

@@ -89,7 +89,7 @@ async fn fetch_issue_field_defs(
         issue_refs.iter().map(|issue_ref| issue_ref.repo.clone()).collect();
     repos.sort();
     repos.dedup();
-    let pairs: Vec<_> = stream::iter(repos.into_iter())
+    let pairs: Vec<_> = stream::iter(repos)
         .map(|repo| async move {
             let fields = platform.list_issue_fields(&repo).await?;
             Ok::<_, crate::error::Error>((repo, fields))
@@ -117,7 +117,7 @@ async fn fetch_issue_snapshots(
     }
     let done = Arc::new(AtomicUsize::new(0));
     let total = by_repo.len();
-    let repo_pairs: Vec<_> = stream::iter(by_repo.into_iter())
+    let repo_pairs: Vec<_> = stream::iter(by_repo)
         .map(|(repo, numbers)| {
             let done = Arc::clone(&done);
             async move {

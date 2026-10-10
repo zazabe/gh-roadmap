@@ -400,7 +400,7 @@ async fn execute_issue_job(
                 let new_path = crate::loader::linked_issue_path(&issue.file.path, number);
                 std::fs::rename(&issue.file.path, &new_path)?;
                 let mut frontmatter = issue.file.frontmatter.clone();
-                frontmatter.url = ctx.issue_url.clone();
+                frontmatter.url.clone_from(&ctx.issue_url);
                 let resolved = body_refs.resolve(&issue.file.body);
                 write_markdown_file(&new_path, &frontmatter, &resolved.body)?;
                 print_step_ok(&new_path.display().to_string());
@@ -472,7 +472,7 @@ async fn normalize_local_refs_after_apply(
             let full_repo = config.full_repo(&issue.file.frontmatter.repo)?;
             platform
                 .update_issue(UpdateIssueRequest {
-                        repo: full_repo.clone(),
+                    repo: full_repo.clone(),
                     number,
                     title: issue.file.frontmatter.title.clone(),
                     body: resolved.body.clone(),

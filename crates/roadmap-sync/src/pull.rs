@@ -136,9 +136,9 @@ fn issue_pull_changes(
         .map(|state| issue_state_to_str(state).to_string());
     push_state_change(&mut changes, issue.id(), &path, local_state, remote_state);
     let local_body = normalize_value(Some(issue.file.body.as_str())).map(str::to_string);
-    let remote_body = snapshots_by_url
-        .get(&issue_url)
-        .and_then(|snapshot| normalize_value(Some(snapshot.issue.body.as_str())).map(str::to_string));
+    let remote_body = snapshots_by_url.get(&issue_url).and_then(|snapshot| {
+        normalize_value(Some(snapshot.issue.body.as_str())).map(str::to_string)
+    });
     push_body_change(&mut changes, issue.id(), &path, local_body, remote_body, overwrite);
     if changes.is_empty() {
         None
@@ -167,9 +167,9 @@ fn milestone_pull_changes(
         push_change(&mut changes, milestone.id(), &path, local_key, local, remote_value, overwrite);
     }
     let local_body = normalize_value(Some(milestone.file.body.as_str())).map(str::to_string);
-    let remote_body = snapshots_by_url
-        .get(&issue_url)
-        .and_then(|snapshot| normalize_value(Some(snapshot.issue.body.as_str())).map(str::to_string));
+    let remote_body = snapshots_by_url.get(&issue_url).and_then(|snapshot| {
+        normalize_value(Some(snapshot.issue.body.as_str())).map(str::to_string)
+    });
     push_body_change(&mut changes, milestone.id(), &path, local_body, remote_body, overwrite);
     if changes.is_empty() {
         None
@@ -529,7 +529,7 @@ async fn fetch_issue_fields(
         .keys()
         .filter_map(|url| parse_issue_url(url).map(|parsed| (url.clone(), parsed)))
         .collect();
-    let pairs: Vec<(String, HashMap<String, String>)> = stream::iter(entries.into_iter())
+    let pairs: Vec<(String, HashMap<String, String>)> = stream::iter(entries)
         .map(|(url, parsed)| async move {
             let values = platform
                 .get_issue_field_values(&IssueRef { repo: parsed.full_repo, number: parsed.number })
@@ -690,7 +690,7 @@ async fn import_missing_items(
         );
         let issue_frontmatter = IssueFrontmatter {
             id: issue_id.clone(),
-            repo: repo_id.to_string(),
+            repo: repo_id.clone(),
             title: remote.title,
             url: Some(remote.url.clone()),
             state: map_issue_state(&remote.state),
@@ -959,9 +959,8 @@ fn apply_pull_plan(roadmap: &Roadmap, plan: &PullPlan) -> Result<()> {
         let issue = issues_by_id
             .get(id.as_str())
             .ok_or_else(|| crate::error::Error::Config(format!("issue `{id}` not found")))?;
-        let frontmatter = issue_updates
-            .remove(&id)
-            .unwrap_or_else(|| issue.file.frontmatter.clone());
+        let frontmatter =
+            issue_updates.remove(&id).unwrap_or_else(|| issue.file.frontmatter.clone());
         let body = issue_body_updates.remove(&id).unwrap_or_else(|| issue.file.body.clone());
         write_markdown_file(&issue.file.path, &frontmatter, &body)?;
         println!("  updated {}", issue.file.path.display());
@@ -973,12 +972,10 @@ fn apply_pull_plan(roadmap: &Roadmap, plan: &PullPlan) -> Result<()> {
         let milestone = milestones_by_id
             .get(id.as_str())
             .ok_or_else(|| crate::error::Error::Config(format!("milestone `{id}` not found")))?;
-        let frontmatter = milestone_updates
-            .remove(&id)
-            .unwrap_or_else(|| milestone.file.frontmatter.clone());
-        let body = milestone_body_updates
-            .remove(&id)
-            .unwrap_or_else(|| milestone.file.body.clone());
+        let frontmatter =
+            milestone_updates.remove(&id).unwrap_or_else(|| milestone.file.frontmatter.clone());
+        let body =
+            milestone_body_updates.remove(&id).unwrap_or_else(|| milestone.file.body.clone());
         write_markdown_file(&milestone.file.path, &frontmatter, &body)?;
         println!("  updated {}", milestone.file.path.display());
     }
