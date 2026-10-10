@@ -17,6 +17,18 @@ pub struct Cli {
 pub enum Command {
     /// Validate local roadmap files (no network)
     Validate,
+    /// Interactive setup: auth, discover project/repos, write roadmap.toml
+    Setup {
+        /// Overwrite existing roadmap.toml and skill files
+        #[arg(long)]
+        force: bool,
+        /// Skip installing the agent skill
+        #[arg(long)]
+        no_skill: bool,
+        /// Install the agent skill to this directory (default: .cursor/skills/roadmap)
+        #[arg(long)]
+        skill_dir: Option<PathBuf>,
+    },
     /// Show planned sync actions (dry-run)
     Plan {
         /// Use only local files and sync-map (no GitHub prefetch)

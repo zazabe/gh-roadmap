@@ -16,17 +16,15 @@ After a release is published:
 ```bash
 VERSION=v0.1.0
 curl -fsSL -o roadmap.tar.gz \
-  "https://github.com/OWNER/roadmap/releases/download/${VERSION}/roadmap-${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+  "https://github.com/zazabe/gh-roadmap/releases/download/${VERSION}/roadmap-${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
 tar -xzf roadmap.tar.gz
 install -m 755 roadmap /usr/local/bin/roadmap
 ```
 
-Replace `OWNER/roadmap` with this repository’s GitHub path.
-
 ### From source
 
 ```bash
-cargo install --git https://github.com/OWNER/roadmap --locked --force
+cargo install --git https://github.com/zazabe/gh-roadmap --locked --force
 # or, from a checkout:
 cargo install --path crates/roadmap-sync --locked --force
 ```
@@ -41,29 +39,29 @@ cargo install --path crates/roadmap-sync --locked --force
 
 ## Quick start (in your product repo)
 
-1. Copy the example tree:
+1. Interactive setup (auth, pick an existing GitHub Project + repos, write
+   `roadmap.toml`, scaffold `projects/`, optional agent skill):
 
    ```bash
-   cp -R examples/basic/roadmap examples/basic/projects .
-   # optional: copy agent skill
-   mkdir -p .cursor/skills
-   cp -R .cursor/skills/roadmap .cursor/skills/
+   roadmap setup
    ```
 
-2. Edit `roadmap/roadmap.toml` (`owner`, `project_number`, repo map).
+   Flags: `--force` (overwrite), `--no-skill`, `--skill-dir <path>`.
 
-3. Fill `projects/` with current-state docs.
+2. Fill `projects/` with current-state docs.
 
-4. Create milestones/issues (see `.cursor/skills/roadmap/SKILL.md`).
+3. Create milestones/issues (see `.cursor/skills/roadmap/SKILL.md`).
 
-5. Sync:
+4. Sync:
 
    ```bash
    roadmap validate
-   roadmap doctor
    roadmap plan
    roadmap apply --yes
    ```
+
+Manual alternative: copy `examples/basic/{roadmap,projects}` and edit
+`roadmap/roadmap.toml`.
 
 CLI flag if the tree is not `./roadmap`:
 
@@ -75,6 +73,7 @@ roadmap --roadmap-dir path/to/roadmap validate
 
 | Command | Purpose |
 |---------|---------|
+| `setup` | Interactive auth + scaffold + `roadmap.toml` |
 | `validate` | Local checks only |
 | `plan [--offline]` | Dry-run create/update actions |
 | `apply [--yes]` | Sync to GitHub |

@@ -11,6 +11,7 @@ mod plan;
 mod platform;
 mod prefetch;
 mod pull;
+mod setup;
 mod style;
 mod validate;
 mod write;
@@ -43,6 +44,9 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Command::Validate => cmd_validate(&roadmap_dir),
+        Command::Setup { force, no_skill, skill_dir } => {
+            setup::run(&roadmap_dir, setup::SetupOptions { force, no_skill, skill_dir }).await
+        }
         Command::Doctor => cmd_doctor(&roadmap_dir).await,
         Command::Plan { offline } => cmd_plan(&roadmap_dir, offline).await,
         Command::Apply { yes } => cmd_apply(&roadmap_dir, yes).await,
