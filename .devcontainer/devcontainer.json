@@ -12,7 +12,10 @@
             "userGid": "1001",
             "upgradePackages": "true"
         },
-        "ghcr.io/devcontainers/features/rust:1": "latest",
+        "ghcr.io/devcontainers/features/rust:1": {
+            "version": "1.99",
+            "profile": "default"
+        },
         "ghcr.io/devcontainers/features/github-cli:1": {}
     },
     "customizations": {
