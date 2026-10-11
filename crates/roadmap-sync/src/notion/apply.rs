@@ -26,10 +26,10 @@ pub async fn apply_notion(roadmap_dir: &Path, skip_confirm: bool) -> Result<()> 
                 .into(),
         )
     })?;
-    if meta.database_id != notion_cfg.database_id {
+    if meta.data_source_id != notion_cfg.data_source_id {
         return Err(Error::Config(format!(
-            "sync-map Notion database_id `{}` does not match roadmap.toml `{}` (re-run setup --notion-only)",
-            meta.database_id, notion_cfg.database_id
+            "sync-map Notion data_source_id `{}` does not match roadmap.toml `{}` (re-run setup --notion-only)",
+            meta.data_source_id, notion_cfg.data_source_id
         )));
     }
 
@@ -54,7 +54,7 @@ pub async fn apply_notion(roadmap_dir: &Path, skip_confirm: bool) -> Result<()> 
 
     let mut sync_map = roadmap.sync_map.clone();
     let mappings = meta.properties.clone();
-    let database_id = meta.database_id.clone();
+    let data_source_id = meta.data_source_id.clone();
 
     for (idx, job) in plan.jobs.iter().enumerate() {
         let milestone = roadmap
@@ -74,7 +74,7 @@ pub async fn apply_notion(roadmap_dir: &Path, skip_confirm: bool) -> Result<()> 
 
         match job.action {
             NotionAction::CreatePage => {
-                let page_id = client.create_page(&database_id, properties).await?;
+                let page_id = client.create_page(&data_source_id, properties).await?;
                 sync_map.set_notion_page_id(milestone.id(), page_id.clone(), Some(now));
                 println!("      {} — created {page_id}", style::status_ok());
             }

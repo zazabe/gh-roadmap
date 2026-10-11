@@ -18,4 +18,4 @@ roadmap = "roadmap"
 # Optional: push-only milestone report to Notion (configure via `roadmap setup`)
 # [platform.notion]
 # enabled = true
-# database_id = "…"
+# data_source_id = "…"

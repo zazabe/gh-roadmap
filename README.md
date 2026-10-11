@@ -76,7 +76,7 @@ roadmap --roadmap-dir path/to/roadmap validate
 | Command | Purpose |
 |---------|---------|
 | `setup` | Interactive auth + scaffold + `roadmap.toml` (optional Notion) |
-| `setup --notion-only` | Reconfigure Notion database + field mapping |
+| `setup --notion-only` | Reconfigure Notion data source + field mapping |
 | `validate` | Local checks only |
 | `plan [--offline] [--platform LIST]` | Dry-run create/update actions |
 | `apply [--yes] [--platform LIST]` | Sync to enabled platforms (GitHub + optional Notion) |
@@ -85,7 +85,7 @@ roadmap --roadmap-dir path/to/roadmap validate
 | `doctor` | Auth and permission checks |
 
 `--platform` is a comma-separated list (`github`, `notion`). Default: all
-enabled platforms. Notion is push-only (milestones → database pages).
+enabled platforms. Notion is push-only (milestones → data source pages).
 
 ```bash
 cargo run --bin roadmap -- --roadmap-dir examples/basic/roadmap validate

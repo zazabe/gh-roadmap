@@ -56,7 +56,7 @@ pub fn build_notion_plan(roadmap: &Roadmap) -> Result<NotionPlan> {
         let page_id = notion_page_id(&roadmap.sync_map, milestone.id());
         let (action, detail) = match page_id {
             Some(id) => (NotionAction::UpdatePage, format!("page {id}")),
-            None => (NotionAction::CreatePage, format!("database {}", meta.database_id)),
+            None => (NotionAction::CreatePage, format!("data source {}", meta.data_source_id)),
         };
         jobs.push(NotionJob {
             id: milestone.id().to_string(),

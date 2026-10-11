@@ -5,13 +5,14 @@ use std::path::Path;
 use crate::config::{default_sync_map_path, NotionConfig};
 use crate::error::{Error, Result};
 use crate::model::{
-    MilestoneStatus, NotionPropertyMappings, NotionStatusMapping, NotionSyncMeta, SyncMap,
+    MilestoneStatus, NotionPropertyMappings, NotionRelationMapping, NotionStatusMapping,
+    NotionSyncMeta, SyncMap,
 };
 use crate::setup::{prompt_index, prompt_line, prompt_yes_no};
 use crate::style;
 
 use super::client::{
-    parse_database_properties, run_ntn_interactive, NotionClient, NotionDbProperty,
+    parse_data_source_properties, run_ntn_interactive, NotionClient, NotionDbProperty,
 };
 use super::mapping::{match_status_values, property_ref};
 
@@ -29,24 +30,25 @@ pub async fn configure_notion(roadmap_dir: &Path) -> Result<Option<NotionSetupRe
     ensure_ntn_auth().await?;
 
     let client = NotionClient::new();
-    println!("Searching Notion databases…");
-    let databases = client.search_databases().await?;
-    if databases.is_empty() {
+    println!("Searching Notion data sources…");
+    let data_sources = client.search_data_sources().await?;
+    if data_sources.is_empty() {
         return Err(Error::Config(
-            "no Notion databases found — create one and share it with your account / PAT".into(),
+            "no Notion data sources found — create a database and share it with your account / PAT"
+                .into(),
         ));
     }
-    for (i, db) in databases.iter().enumerate() {
-        println!("  {}. {} ({})", i + 1, db.title, db.id);
+    for (i, ds) in data_sources.iter().enumerate() {
+        println!("  {}. {} ({})", i + 1, ds.title, ds.id);
     }
-    let idx = prompt_index("Select milestones database", databases.len())?;
-    let database = &databases[idx];
+    let idx = prompt_index("Select milestones data source", data_sources.len())?;
+    let data_source = &data_sources[idx];
 
-    println!("Loading database schema…");
-    let schema = client.get_database(&database.id).await?;
-    let properties = parse_database_properties(&schema);
+    println!("Loading data source schema…");
+    let schema = client.get_data_source(&data_source.id).await?;
+    let properties = parse_data_source_properties(&schema);
     if properties.is_empty() {
-        return Err(Error::Config("selected database has no properties".into()));
+        return Err(Error::Config("selected data source has no properties".into()));
     }
 
     let title = pick_property("title", &properties, |p| p.field_type == "title", false)?
@@ -66,9 +68,16 @@ pub async fn configure_notion(roadmap_dir: &Path) -> Result<Option<NotionSetupRe
     let target_date = pick_property("target_date", &properties, |p| p.field_type == "date", true)?
         .map(|p| property_ref(&p));
 
+    let parent_relation = configure_parent_relation(&client, &properties).await?;
+
     let meta = NotionSyncMeta {
-        database_id: database.id.clone(),
-        properties: NotionPropertyMappings { title: property_ref(&title), status, target_date },
+        data_source_id: data_source.id.clone(),
+        properties: NotionPropertyMappings {
+            title: property_ref(&title),
+            status,
+            target_date,
+            parent_relation,
+        },
     };
 
     let sync_map_path = default_sync_map_path(roadmap_dir);
@@ -78,7 +87,7 @@ pub async fn configure_notion(roadmap_dir: &Path) -> Result<Option<NotionSetupRe
     println!("  wrote {}", sync_map_path.display());
 
     Ok(Some(NotionSetupResult {
-        config: NotionConfig { enabled: true, database_id: database.id.clone() },
+        config: NotionConfig { enabled: true, data_source_id: data_source.id.clone() },
     }))
 }
 
@@ -150,6 +159,66 @@ fn pick_property(
     Ok(Some(candidates[n - 1].clone()))
 }
 
+async fn configure_parent_relation(
+    client: &NotionClient,
+    properties: &[NotionDbProperty],
+) -> Result<Option<NotionRelationMapping>> {
+    if !prompt_yes_no("Link new milestones to an existing Notion page (relation)?", false)? {
+        return Ok(None);
+    }
+
+    let relation_prop =
+        pick_property("parent_relation", properties, |p| p.field_type == "relation", true)?;
+    let Some(relation_prop) = relation_prop else {
+        return Ok(None);
+    };
+
+    let Some(target_ds) = relation_prop.relation_data_source_id.as_deref() else {
+        return Err(Error::Config(format!(
+            "relation property `{}` has no target data_source_id in schema",
+            relation_prop.name
+        )));
+    };
+
+    println!("Loading pages from related data source…");
+    let pages = client.list_data_source_pages(target_ds).await?;
+    if pages.is_empty() {
+        return Err(Error::Config(format!(
+            "no pages found in related data source `{target_ds}` — create a target page and share that database with your Notion connection"
+        )));
+    }
+
+    println!();
+    println!("Select fixed page for relation `{}`:", relation_prop.name);
+    println!("  0. (skip)");
+    for (i, page) in pages.iter().enumerate() {
+        println!("  {}. {} ({})", i + 1, page.title, page.id);
+    }
+    let answer = prompt_line("Select page [0]", Some("0"))?;
+    let n: usize =
+        answer.parse().map_err(|_| Error::Config(format!("expected a number, got `{answer}`")))?;
+    if n == 0 {
+        return Ok(None);
+    }
+    if n > pages.len() {
+        return Err(Error::Config(format!("expected a number 0..{}, got `{n}`", pages.len())));
+    }
+    let page = &pages[n - 1];
+    println!(
+        "[{}] every milestone will link to `{}` via `{}`",
+        style::status_ok(),
+        page.title,
+        relation_prop.name
+    );
+
+    Ok(Some(NotionRelationMapping {
+        id: relation_prop.id.clone(),
+        name: relation_prop.name.clone(),
+        field_type: relation_prop.field_type.clone(),
+        page_ids: vec![page.id.clone()],
+    }))
+}
+
 fn build_status_mapping(prop: &NotionDbProperty) -> Result<NotionStatusMapping> {
     let mut values = match_status_values(&prop.options);
     for status in MilestoneStatus::ALL {
@@ -214,8 +283,8 @@ pub fn notion_toml_section(config: &NotionConfig) -> String {
         r#"
 [platform.notion]
 enabled = {}
-database_id = "{}"
+data_source_id = "{}"
 "#,
-        config.enabled, config.database_id
+        config.enabled, config.data_source_id
     )
 }

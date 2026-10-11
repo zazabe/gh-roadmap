@@ -35,7 +35,18 @@ pub fn build_page_properties(
         }
     }
 
+    if let Some(rel) = &mappings.parent_relation {
+        if !rel.page_ids.is_empty() {
+            properties.insert(rel.name.clone(), relation_property(&rel.page_ids));
+        }
+    }
+
     Ok(Value::Object(properties))
+}
+
+fn relation_property(page_ids: &[String]) -> Value {
+    let refs: Vec<Value> = page_ids.iter().map(|id| json!({ "id": id })).collect();
+    json!({ "relation": refs })
 }
 
 fn title_property(title: &str) -> Value {
@@ -131,7 +142,7 @@ mod tests {
     use super::*;
     use crate::model::{
         MilestoneFile, MilestoneFrontmatter, MilestoneStatus, NotionPropertyMappings,
-        NotionPropertyRef, NotionStatusMapping,
+        NotionPropertyRef, NotionRelationMapping, NotionStatusMapping,
     };
     use crate::parse::{LocalId, LocalIdKind};
     use std::collections::{BTreeMap, HashMap};
@@ -174,6 +185,12 @@ mod tests {
                 values: HashMap::from([("planned".into(), "Planned".into())]),
             }),
             target_date: None,
+            parent_relation: Some(NotionRelationMapping {
+                id: "proj".into(),
+                name: "Project".into(),
+                field_type: "relation".into(),
+                page_ids: vec!["page-project-1".into()],
+            }),
         };
         let props =
             build_page_properties(&milestone(MilestoneStatus::Planned, None), &mappings).unwrap();
@@ -182,6 +199,10 @@ mod tests {
             Some("Epic 1: X")
         );
         assert_eq!(props.pointer("/Status/status/name").and_then(Value::as_str), Some("Planned"));
+        assert_eq!(
+            props.pointer("/Project/relation/0/id").and_then(Value::as_str),
+            Some("page-project-1")
+        );
     }
 
     #[test]

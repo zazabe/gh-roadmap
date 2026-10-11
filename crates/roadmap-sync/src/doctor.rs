@@ -118,12 +118,12 @@ async fn check_notion(report: &mut DoctorReport, config: &RoadmapConfig) {
         return;
     };
 
-    match client.get_database(&notion.database_id).await {
+    match client.get_data_source(&notion.data_source_id).await {
         Ok(_) => report.checks.push(DoctorReport::pass(
-            "notion database",
-            format!("can read database {}", notion.database_id),
+            "notion data source",
+            format!("can read data source {}", notion.data_source_id),
         )),
-        Err(err) => report.checks.push(DoctorReport::fail("notion database", err.to_string())),
+        Err(err) => report.checks.push(DoctorReport::fail("notion data source", err.to_string())),
     }
 }
 

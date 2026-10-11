@@ -31,7 +31,9 @@ pub struct GithubConfig {
 pub struct NotionConfig {
     #[serde(default)]
     pub enabled: bool,
-    pub database_id: String,
+    /// Notion data source id (API ≥ 2025-09-03). Accepts legacy `database_id` key.
+    #[serde(alias = "database_id")]
+    pub data_source_id: String,
 }
 
 impl RoadmapConfig {
@@ -66,9 +68,9 @@ impl RoadmapConfig {
         if !notion.enabled {
             return Err(Error::Config("[platform.notion] is present but enabled = false".into()));
         }
-        if notion.database_id.trim().is_empty() {
+        if notion.data_source_id.trim().is_empty() {
             return Err(Error::Config(
-                "[platform.notion].database_id is required when Notion is enabled".into(),
+                "[platform.notion].data_source_id is required when Notion is enabled".into(),
             ));
         }
         Ok(notion)

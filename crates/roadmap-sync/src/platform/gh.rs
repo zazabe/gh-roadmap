@@ -141,8 +141,7 @@ impl GhPlatform {
                 }
               }
             }";
-        let response =
-            self.api_graphql(QUERY, serde_json::json!({ "id": project_id })).await?;
+        let response = self.api_graphql(QUERY, serde_json::json!({ "id": project_id })).await?;
         let nodes = response
             .pointer("/data/node/fields/nodes")
             .and_then(Value::as_array)
@@ -1239,9 +1238,10 @@ fn normalize_project_data_type(data_type: &str, type_name: &str, field_id: &str)
         "ProjectV2SingleSelectField" => return "SINGLE_SELECT".into(),
         "ProjectV2IterationField" => return "ITERATION".into(),
         "ProjectV2Field" => {}
-        other if !other.is_empty()
-            && !other.starts_with("ProjectV2")
-            && other.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_') =>
+        other
+            if !other.is_empty()
+                && !other.starts_with("ProjectV2")
+                && other.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_') =>
         {
             return other.to_ascii_uppercase();
         }

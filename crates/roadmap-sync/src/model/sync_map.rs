@@ -69,7 +69,9 @@ impl ProjectFieldMapping {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NotionSyncMeta {
-    pub database_id: String,
+    /// Notion data source id. Accepts legacy `database_id` key in older sync-maps.
+    #[serde(alias = "database_id")]
+    pub data_source_id: String,
     pub properties: NotionPropertyMappings,
 }
 
@@ -80,6 +82,19 @@ pub struct NotionPropertyMappings {
     pub status: Option<NotionStatusMapping>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_date: Option<NotionPropertyRef>,
+    /// Optional fixed relation: every milestone page links to the same Notion page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_relation: Option<NotionRelationMapping>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NotionRelationMapping {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub field_type: String,
+    /// Target page id(s) written on every create/update (fixed-page mode).
+    pub page_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -210,7 +225,7 @@ mod tests {
         let raw = r#"{
   "_meta": {
     "notion": {
-      "database_id": "db-1",
+      "database_id": "ds-1",
       "properties": {
         "title": { "id": "title", "name": "Name", "type": "title" },
         "status": {
@@ -231,7 +246,7 @@ mod tests {
   }
 }"#;
         let map: SyncMap = serde_json::from_str(raw).unwrap();
-        assert_eq!(map.meta.notion.as_ref().unwrap().database_id, "db-1");
+        assert_eq!(map.meta.notion.as_ref().unwrap().data_source_id, "ds-1");
         assert_eq!(map.items["milestone-x"].notion_page_id.as_deref(), Some("page-1"));
         map.meta.notion.as_ref().unwrap().properties.status.as_ref().unwrap();
     }

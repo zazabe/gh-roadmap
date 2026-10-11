@@ -121,7 +121,8 @@ with `repo` and `project` scopes (or `GH_TOKEN` / `GITHUB_TOKEN`).
 **Optional Notion report:** enable during `roadmap setup` (or
 `roadmap setup --notion-only`). Uses the Notion CLI (`ntn login`, or
 `NOTION_API_TOKEN`). Push-only: milestone title/status/(optional) date → a
-Notion database. Select targets with `--platform github,notion`.
+Notion data source. Setup can also set a fixed relation (e.g. all milestones
+→ one Project page). Select targets with `--platform github,notion`.
 
 ---
 

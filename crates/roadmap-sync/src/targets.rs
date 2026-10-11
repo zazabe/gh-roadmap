@@ -125,7 +125,7 @@ mod tests {
                     hub_repo: "hub".into(),
                     repos: HashMap::from([("app".into(), "app".into())]),
                 }),
-                notion: Some(NotionConfig { enabled, database_id: "db-1".into() }),
+                notion: Some(NotionConfig { enabled, data_source_id: "ds-1".into() }),
             },
         }
     }
