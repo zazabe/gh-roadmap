@@ -265,11 +265,10 @@ fn parse_owner_from_remote(url: &str) -> Option<String> {
     // git@github.com:OWNER/REPO.git or https://github.com/OWNER/REPO.git
     let path = if let Some(rest) = url.strip_prefix("git@") {
         rest.split_once(':')?.1
-    } else if let Some(idx) = url.find("://") {
+    } else {
+        let idx = url.find("://")?;
         let after = &url[idx + 3..];
         after.split_once('/')?.1
-    } else {
-        return None;
     };
     let owner = path.trim_matches('/').split('/').next()?;
     if owner.is_empty() {

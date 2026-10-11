@@ -126,6 +126,7 @@ pub struct SetProjectFieldValueRequest {
 }
 
 /// Backend-agnostic interface for issue trackers and project boards.
+#[allow(clippy::double_must_use)] // async_trait wraps already-must_use Result futures
 #[async_trait]
 pub trait Platform: Send + Sync {
     async fn create_issue(&self, request: CreateIssueRequest) -> Result<RemoteIssue>;

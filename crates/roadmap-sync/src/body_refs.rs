@@ -326,7 +326,7 @@ mod tests {
         resolver.insert("app-foo", "app#12".into());
         let outcome = resolver.resolve("Depends on %app-foo%.");
         assert_eq!(outcome.body, "Depends on app#12.");
-        assert!(outcome.unresolved.is_empty());
+        assert_eq!(outcome.unresolved, [] as [String; 0]);
     }
 
     #[test]
@@ -342,7 +342,7 @@ mod tests {
         let resolver = BodyRefResolver::default();
         let outcome = resolver.resolve("Ignore %not valid% and %%.");
         assert_eq!(outcome.body, "Ignore %not valid% and %%.");
-        assert!(outcome.unresolved.is_empty());
+        assert_eq!(outcome.unresolved, [] as [String; 0]);
     }
 
     #[test]
