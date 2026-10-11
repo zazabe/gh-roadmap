@@ -491,14 +491,24 @@ fn sync_field_mappings(sync_map: &mut SyncMap, meta: &ProjectMeta) {
     sync_map.meta.fields.issue = meta
         .fields
         .iter()
-        .filter(|field| field_key(&field.name) != "title")
+        .filter(|field| {
+            crate::field_sync::should_sync_map_project_field(&field.name, &field.field_type)
+        })
         .map(|field| {
+            let source = if crate::field_sync::is_writable_project_type(&field.field_type) {
+                crate::model::FieldSource::Project
+            } else {
+                // Linked issue fields (e.g. Start/Target date) appear in field-list
+                // with empty/unsupported types — keep pull mapping, write via issue API.
+                crate::model::FieldSource::Issue
+            };
             (
                 field_key(&field.name),
                 ProjectFieldMapping {
                     field_id: field.id.clone(),
                     field_name: field.name.clone(),
                     field_type: field.field_type.clone(),
+                    source: Some(source),
                 },
             )
         })

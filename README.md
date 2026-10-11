@@ -81,6 +81,7 @@ roadmap --roadmap-dir path/to/roadmap validate
 | `plan [--offline] [--platform LIST]` | Dry-run create/update actions |
 | `apply [--yes] [--platform LIST]` | Sync to enabled platforms (GitHub + optional Notion) |
 | `pull [--yes] [--overwrite] [--import-missing]` | Pull remote → local (GitHub only) |
+| `show --issue N [--repo ID]` | Inspect local vs GitHub fields / sync drift |
 | `doctor` | Auth and permission checks |
 
 `--platform` is a comma-separated list (`github`, `notion`). Default: all

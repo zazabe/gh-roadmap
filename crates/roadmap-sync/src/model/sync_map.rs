@@ -29,12 +29,42 @@ pub struct SyncFieldMappings {
     pub milestone: HashMap<String, ProjectFieldMapping>,
 }
 
+/// Where apply should write a mapped field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FieldSource {
+    /// GitHub Issue Fields (`setIssueFieldValue`).
+    Issue,
+    /// GitHub Project V2 fields (`gh project item-edit`).
+    Project,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectFieldMapping {
     pub field_id: String,
     pub field_name: String,
+    /// GitHub datatype (`NUMBER`, `DATE`, …). Also accepts the shorthand values
+    /// `project` / `issue` as an alternate way to set [`Self::source`].
     #[serde(rename = "type")]
     pub field_type: String,
+    /// When set, apply uses this system. When omitted, issue-field definitions
+    /// win over project fields (so linked Start/Target dates stay on issues).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<FieldSource>,
+}
+
+impl ProjectFieldMapping {
+    /// Effective write target: explicit `source`, else `type: "project"|"issue"`.
+    pub fn effective_source(&self) -> Option<FieldSource> {
+        if let Some(source) = self.source {
+            return Some(source);
+        }
+        match self.field_type.to_ascii_lowercase().as_str() {
+            "project" => Some(FieldSource::Project),
+            "issue" => Some(FieldSource::Issue),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

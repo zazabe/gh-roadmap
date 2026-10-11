@@ -64,4 +64,13 @@ pub enum Command {
         #[arg(long)]
         import_missing: bool,
     },
+    /// Show local + remote state for one issue (fields, sync drift)
+    Show {
+        /// GitHub issue number
+        #[arg(long)]
+        issue: u64,
+        /// Local repo id from roadmap.toml (required if number is ambiguous)
+        #[arg(long)]
+        repo: Option<String>,
+    },
 }

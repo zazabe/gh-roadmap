@@ -7,6 +7,9 @@ use time::OffsetDateTime;
 use crate::body_refs::BodyRefResolver;
 use crate::config::{default_sync_map_path, RoadmapConfig};
 use crate::error::Result;
+use crate::field_sync::{
+    field_values_equal, normalize_field_value, resolve_field_target, FieldTarget,
+};
 use crate::loader::load;
 use crate::model::{Milestone, ProjectFieldMapping, SyncMap};
 use crate::plan::{
@@ -14,8 +17,8 @@ use crate::plan::{
     update_epic_request, update_request, ActionKind, JobKind, PlanJob,
 };
 use crate::platform::{
-    IssueFieldValueUpdate, IssueRef, Platform, ProjectRef, RemoteIssue, SetProjectStatusRequest,
-    UpdateIssueRequest,
+    IssueFieldValueUpdate, IssueRef, Platform, ProjectRef, RemoteIssue,
+    SetProjectFieldValueRequest, SetProjectStatusRequest, UpdateIssueRequest,
 };
 use crate::prefetch::RemoteCache;
 use crate::style;
@@ -215,9 +218,12 @@ async fn execute_milestone_job(
                         milestone.id()
                     ))
                 })?;
-                let updated = sync_issue_fields(
+                let updated = sync_fields(
                     platform,
+                    project,
                     &IssueRef { repo: hub_full_repo.to_string(), number },
+                    ctx.project_item_id.as_deref(),
+                    ctx.issue_url.as_deref(),
                     &milestone.file.frontmatter.fields,
                     &sync_map.meta.fields.milestone,
                     cache,
@@ -376,9 +382,12 @@ async fn execute_issue_job(
                         issue.id()
                     ))
                 })?;
-                let updated = sync_issue_fields(
+                let updated = sync_fields(
                     platform,
+                    project,
                     &IssueRef { repo: full_repo.to_string(), number },
+                    ctx.project_item_id.as_deref(),
+                    ctx.issue_url.as_deref(),
                     &issue.file.frontmatter.fields,
                     &sync_map.meta.fields.issue,
                     cache,
@@ -479,60 +488,89 @@ async fn normalize_local_refs_after_apply(
     Ok(())
 }
 
-async fn sync_issue_fields(
+async fn sync_fields(
     platform: &dyn Platform,
+    project: &ProjectRef,
     issue_ref: &IssueRef,
+    project_item_id: Option<&str>,
+    issue_url: Option<&str>,
     local_fields: &std::collections::BTreeMap<String, Option<String>>,
     mappings: &std::collections::HashMap<String, ProjectFieldMapping>,
     cache: &RemoteCache,
 ) -> Result<usize> {
     let issue_defs =
         cache.issue_field_defs_by_repo.get(&issue_ref.repo).cloned().unwrap_or_default();
-    let remote_values = cache.issue_fields.get(issue_ref);
+    let remote_issue_values = cache.issue_fields.get(issue_ref);
+    let project_meta = cache.project_meta.as_ref();
+    let project_item = issue_url.and_then(|url| cache.project_items.get(url));
 
-    let mut updates = Vec::new();
+    let mut issue_updates = Vec::new();
+    let mut project_updates = Vec::new();
+
     for (local_key, local_value) in local_fields {
-        let field_name =
-            mappings.get(local_key).map(|mapping| mapping.field_name.clone()).or_else(|| {
-                issue_defs
-                    .iter()
-                    .find(|field| field_key(&field.name) == *local_key)
-                    .map(|field| field.name.clone())
-            });
-        let Some(field_name) = field_name else {
+        let Some(target) =
+            resolve_field_target(local_key, mappings, Some(issue_defs.as_slice()), project_meta)
+        else {
             continue;
         };
         let local_norm = normalize_field_value(local_value.as_deref());
-        let remote_norm = remote_values
-            .and_then(|fields| fields.get(&field_name))
-            .and_then(|value| normalize_field_value(Some(value.as_str())));
-        if local_norm != remote_norm {
-            updates
-                .push(IssueFieldValueUpdate { field_name, value: local_norm.map(str::to_string) });
+        let remote_norm = match &target {
+            FieldTarget::Issue { field_name } => remote_issue_values
+                .and_then(|fields| fields.get(field_name))
+                .and_then(|value| normalize_field_value(Some(value.as_str()))),
+            FieldTarget::Project { field_id, .. } => project_item
+                .and_then(|item| item.field_values.get(field_id))
+                .and_then(|value| normalize_field_value(Some(value.as_str()))),
+        };
+        if field_values_equal(&target, local_norm, remote_norm) {
+            continue;
+        }
+        match target {
+            FieldTarget::Issue { field_name } => {
+                issue_updates.push(IssueFieldValueUpdate {
+                    field_name,
+                    value: local_norm.map(str::to_string),
+                });
+            }
+            FieldTarget::Project { field_id, field_type, .. } => {
+                project_updates.push((field_id, field_type, local_norm.map(str::to_string)));
+            }
         }
     }
-    if updates.is_empty() {
-        return Ok(0);
+
+    if !issue_updates.is_empty() {
+        platform.set_issue_field_values(issue_ref, &issue_updates, issue_defs.as_slice()).await?;
     }
-    platform.set_issue_field_values(issue_ref, &updates, issue_defs.as_slice()).await?;
-    Ok(updates.len())
-}
 
-fn normalize_field_value(value: Option<&str>) -> Option<&str> {
-    value.filter(|value| !value.is_empty())
-}
-
-fn field_key(name: &str) -> String {
-    let mut key = String::new();
-    let mut last_underscore = false;
-    for ch in name.chars() {
-        if ch.is_ascii_alphanumeric() {
-            key.push(ch.to_ascii_lowercase());
-            last_underscore = false;
-        } else if !last_underscore {
-            key.push('_');
-            last_underscore = true;
+    if !project_updates.is_empty() {
+        let item_id = project_item_id
+            .or_else(|| project_item.map(|item| item.item_id.as_str()))
+            .ok_or_else(|| {
+                crate::error::Error::Config(format!(
+                    "cannot sync project fields for `{}/{}`: missing project item id",
+                    issue_ref.repo, issue_ref.number
+                ))
+            })?;
+        let meta = project_meta.ok_or_else(|| {
+            crate::error::Error::Config(
+                "cannot sync project fields: missing project metadata".into(),
+            )
+        })?;
+        for (field_id, field_type, value) in &project_updates {
+            platform
+                .set_project_item_field_value_with_meta(
+                    project,
+                    SetProjectFieldValueRequest {
+                        item_id: item_id.to_string(),
+                        field_id: field_id.clone(),
+                        value: value.clone(),
+                        field_type: Some(field_type.clone()),
+                    },
+                    meta,
+                )
+                .await?;
         }
     }
-    key.trim_matches('_').to_string()
+
+    Ok(issue_updates.len() + project_updates.len())
 }

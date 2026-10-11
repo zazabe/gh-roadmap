@@ -115,6 +115,16 @@ pub struct SetProjectStatusRequest {
     pub status: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct SetProjectFieldValueRequest {
+    pub item_id: String,
+    pub field_id: String,
+    /// `None` or empty clears the field value.
+    pub value: Option<String>,
+    /// Override when project field-list returns an empty `dataType`.
+    pub field_type: Option<String>,
+}
+
 /// Backend-agnostic interface for issue trackers and project boards.
 #[async_trait]
 pub trait Platform: Send + Sync {
@@ -164,6 +174,13 @@ pub trait Platform: Send + Sync {
         &self,
         project: &ProjectRef,
         request: SetProjectStatusRequest,
+        meta: &ProjectMeta,
+    ) -> Result<()>;
+
+    async fn set_project_item_field_value_with_meta(
+        &self,
+        project: &ProjectRef,
+        request: SetProjectFieldValueRequest,
         meta: &ProjectMeta,
     ) -> Result<()>;
 }

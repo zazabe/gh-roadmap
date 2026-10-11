@@ -1,9 +1,10 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use crate::config::RoadmapConfig;
 use crate::error::Result;
-use crate::model::{Issue, IssueState, Milestone, ProjectFieldMapping, Roadmap};
-use crate::platform::{CreateIssueRequest, IssueFieldDefinition, UpdateIssueRequest};
+use crate::field_sync;
+use crate::model::{Issue, IssueState, Milestone, Roadmap};
+use crate::platform::{CreateIssueRequest, UpdateIssueRequest};
 use crate::prefetch::{self, RemoteCache};
 use crate::style;
 
@@ -139,7 +140,7 @@ fn milestone_steps(
             kind: ActionKind::AddToProject,
             detail: format!("project #{project_number}"),
         });
-        steps.push(PlanStep { kind: ActionKind::SyncFields, detail: "sync issue fields".into() });
+        steps.push(PlanStep { kind: ActionKind::SyncFields, detail: "sync fields".into() });
         steps.push(PlanStep {
             kind: ActionKind::RenameFile,
             detail: format!("{} → *-#<new>.md", milestone.file.path.display()),
@@ -165,21 +166,22 @@ fn milestone_steps(
                 detail: format!("{hub_full_repo}#{number}: {}", milestone.file.frontmatter.title),
             });
         }
+        let milestone_url = format!("https://github.com/{hub_full_repo}/issues/{number}");
         let needs_field_sync = cache.is_none_or(|cache| {
             let remote_fields = cache.issue_fields.get(&issue_ref);
             let field_defs = cache.issue_field_defs_by_repo.get(&hub_full_repo);
-            fields_need_sync(
+            let project_item = cache.project_items.get(&milestone_url);
+            field_sync::fields_need_sync(
                 &milestone.file.frontmatter.fields,
                 &roadmap.sync_map.meta.fields.milestone,
                 remote_fields,
-                field_defs,
+                field_defs.map(Vec::as_slice),
+                project_item,
+                cache.project_meta.as_ref(),
             )
         });
         if needs_field_sync {
-            steps.push(PlanStep {
-                kind: ActionKind::SyncFields,
-                detail: "sync issue fields".into(),
-            });
+            steps.push(PlanStep { kind: ActionKind::SyncFields, detail: "sync fields".into() });
         }
         if roadmap.sync_map.issue_entry(milestone.id()).is_none() {
             steps.push(PlanStep {
@@ -253,7 +255,7 @@ fn issue_steps(
             kind: ActionKind::SetProjectStatus,
             detail: format!("status: {}", issue.project_status()),
         });
-        steps.push(PlanStep { kind: ActionKind::SyncFields, detail: "sync issue fields".into() });
+        steps.push(PlanStep { kind: ActionKind::SyncFields, detail: "sync fields".into() });
         steps.push(PlanStep {
             kind: ActionKind::RenameFile,
             detail: format!("{} → *-#<new>.md", issue.file.path.display()),
@@ -310,10 +312,7 @@ fn issue_steps(
                 kind: ActionKind::SetProjectStatus,
                 detail: format!("status: {}", issue.project_status()),
             });
-            steps.push(PlanStep {
-                kind: ActionKind::SyncFields,
-                detail: "sync issue fields".into(),
-            });
+            steps.push(PlanStep { kind: ActionKind::SyncFields, detail: "sync fields".into() });
         } else {
             let status_field_id = cache
                 .and_then(|cache| cache.project_meta.as_ref())
@@ -334,18 +333,17 @@ fn issue_steps(
             let needs_field_sync = cache.is_none_or(|cache| {
                 let remote_fields = cache.issue_fields.get(&issue_ref);
                 let field_defs = cache.issue_field_defs_by_repo.get(&full_repo);
-                fields_need_sync(
+                field_sync::fields_need_sync(
                     &issue.file.frontmatter.fields,
                     &roadmap.sync_map.meta.fields.issue,
                     remote_fields,
-                    field_defs,
+                    field_defs.map(Vec::as_slice),
+                    project_item,
+                    cache.project_meta.as_ref(),
                 )
             });
             if needs_field_sync {
-                steps.push(PlanStep {
-                    kind: ActionKind::SyncFields,
-                    detail: "sync issue fields".into(),
-                });
+                steps.push(PlanStep { kind: ActionKind::SyncFields, detail: "sync fields".into() });
             }
             if cache.is_some()
                 && roadmap.sync_map.issue_entry(issue.id()).is_some()
@@ -378,49 +376,6 @@ fn epic_url_for_milestone(
                 .map(|number| format!("https://github.com/{hub_full_repo}/issues/{number}"))
         })
     })
-}
-
-fn fields_need_sync(
-    local_fields: &std::collections::BTreeMap<String, Option<String>>,
-    mappings: &HashMap<String, ProjectFieldMapping>,
-    remote_fields: Option<&HashMap<String, String>>,
-    field_defs: Option<&Vec<IssueFieldDefinition>>,
-) -> bool {
-    local_fields.iter().any(|(local_key, local_value)| {
-        let field_name =
-            mappings.get(local_key).map(|mapping| mapping.field_name.as_str()).or_else(|| {
-                field_defs.and_then(|defs| {
-                    defs.iter()
-                        .find(|field| field_key(&field.name) == *local_key)
-                        .map(|field| field.name.as_str())
-                })
-            });
-        let Some(field_name) = field_name else {
-            return false;
-        };
-        let remote_value = remote_fields.and_then(|fields| fields.get(field_name));
-        normalize_field_value(local_value.as_deref())
-            != normalize_field_value(remote_value.map(String::as_str))
-    })
-}
-
-fn normalize_field_value(value: Option<&str>) -> Option<&str> {
-    value.filter(|v| !v.is_empty())
-}
-
-fn field_key(name: &str) -> String {
-    let mut key = String::new();
-    let mut last_underscore = false;
-    for ch in name.chars() {
-        if ch.is_ascii_alphanumeric() {
-            key.push(ch.to_ascii_lowercase());
-            last_underscore = false;
-        } else if !last_underscore {
-            key.push('_');
-            last_underscore = true;
-        }
-    }
-    key.trim_matches('_').to_string()
 }
 
 /// Group jobs under milestones for display (issues without milestone go to "unassigned").

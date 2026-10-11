@@ -66,3 +66,24 @@ impl Issue {
             .unwrap_or("Backlog")
     }
 }
+
+#[cfg(test)]
+mod field_yaml_tests {
+    use super::*;
+
+    #[test]
+    fn accepts_numeric_estimate() {
+        let yaml = r"
+id: platform-x
+repo: platform
+title: T
+state: open
+fields:
+  estimate: 2.5
+  priority: null
+  status: Todo
+";
+        let fm: IssueFrontmatter = serde_yaml::from_str(yaml).expect("parse");
+        assert_eq!(fm.fields.get("estimate").and_then(|v| v.as_deref()), Some("2.5"));
+    }
+}

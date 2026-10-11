@@ -12,7 +12,8 @@ use crate::error::{PlatformError, Result};
 use crate::platform::{
     CreateIssueRequest, IssueFieldDefinition, IssueFieldOption, IssueFieldValueUpdate, IssueRef,
     Platform, ProjectField, ProjectFieldOption, ProjectIssueItem, ProjectItem, ProjectMeta,
-    ProjectRef, RemoteIssue, RemoteIssueSnapshot, SetProjectStatusRequest, UpdateIssueRequest,
+    ProjectRef, RemoteIssue, RemoteIssueSnapshot, SetProjectFieldValueRequest,
+    SetProjectStatusRequest, UpdateIssueRequest,
 };
 
 const PAT_HINT: &str = "GitHub token lacks permission. Fine-grained PAT: grant Issues \
@@ -117,6 +118,68 @@ impl GhPlatform {
                 ),
             ))
         }
+    }
+
+    async fn fetch_project_fields_graphql(&self, project_id: &str) -> Result<Vec<ProjectField>> {
+        const QUERY: &str = r"
+            query($id: ID!) {
+              node(id: $id) {
+                ... on ProjectV2 {
+                  fields(first: 100) {
+                    nodes {
+                      __typename
+                      ... on ProjectV2FieldCommon {
+                        id
+                        name
+                        dataType
+                      }
+                      ... on ProjectV2SingleSelectField {
+                        options { id name }
+                      }
+                    }
+                  }
+                }
+              }
+            }";
+        let response =
+            self.api_graphql(QUERY, serde_json::json!({ "id": project_id })).await?;
+        let nodes = response
+            .pointer("/data/node/fields/nodes")
+            .and_then(Value::as_array)
+            .ok_or_else(|| command_failed("gh", "graphql: missing project fields nodes"))?;
+
+        let mut fields = Vec::new();
+        for node in nodes {
+            let id = node.get("id").and_then(Value::as_str).unwrap_or_default();
+            let name = node.get("name").and_then(Value::as_str).unwrap_or_default();
+            if id.is_empty() || name.is_empty() {
+                continue;
+            }
+            let data_type = node.get("dataType").and_then(Value::as_str).unwrap_or_default();
+            let type_name = node.get("__typename").and_then(Value::as_str).unwrap_or_default();
+            let field_type = normalize_project_data_type(data_type, type_name, id);
+            let options = node
+                .get("options")
+                .and_then(Value::as_array)
+                .map(|options| {
+                    options
+                        .iter()
+                        .filter_map(|option| {
+                            let id = option.get("id").and_then(Value::as_str)?;
+                            let name = option.get("name").and_then(Value::as_str)?;
+                            Some(ProjectFieldOption { id: id.to_string(), name: name.to_string() })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            fields.push(ProjectField {
+                id: id.to_string(),
+                name: name.to_string(),
+                field_type,
+                options,
+            });
+        }
+        Ok(fields)
     }
 
     async fn run_output(&self, args: &[&str]) -> Result<String> {
@@ -324,10 +387,20 @@ struct GhProjectFields {
 struct GhProjectField {
     id: String,
     name: String,
+    /// GraphQL typename on older `gh` (`ProjectV2Field`, …).
+    #[serde(rename = "type", default)]
+    type_name: String,
+    /// Present on newer `gh` (`NUMBER`, `SINGLE_SELECT`, …).
     #[serde(rename = "dataType", default)]
     data_type: String,
     #[serde(default)]
     options: Vec<GhProjectFieldOption>,
+}
+
+impl GhProjectField {
+    fn resolved_data_type(&self) -> String {
+        normalize_project_data_type(&self.data_type, &self.type_name, &self.id)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -883,6 +956,20 @@ impl Platform for GhPlatform {
             .run_json(&["project", "view", &number, "--owner", &project.owner, "--format", "json"])
             .await?;
 
+        // Prefer GraphQL `dataType` — older `gh project field-list --format json`
+        // only exported the GraphQL typename as `type`, leaving dataType empty.
+        match self.fetch_project_fields_graphql(&project_view.id).await {
+            Ok(fields) if !fields.is_empty() => {
+                return Ok(ProjectMeta { project_id: project_view.id, fields });
+            }
+            Ok(_) => {
+                warn!("graphql project fields empty; falling back to gh field-list");
+            }
+            Err(err) => {
+                warn!(error = %err, "graphql project fields failed; falling back to gh field-list");
+            }
+        }
+
         let fields: GhProjectFields = self
             .run_json(&[
                 "project",
@@ -903,7 +990,7 @@ impl Platform for GhPlatform {
                 .map(|field| ProjectField {
                     id: field.id.clone(),
                     name: field.name.clone(),
-                    field_type: field.data_type.clone(),
+                    field_type: field.resolved_data_type(),
                     options: field
                         .options
                         .iter()
@@ -966,6 +1053,103 @@ impl Platform for GhPlatform {
             &option.id,
         ];
         self.run_output(&args).await?;
+        Ok(())
+    }
+
+    async fn set_project_item_field_value_with_meta(
+        &self,
+        project: &ProjectRef,
+        request: SetProjectFieldValueRequest,
+        meta: &ProjectMeta,
+    ) -> Result<()> {
+        let field = meta.fields.iter().find(|field| field.id == request.field_id);
+        let field_name = field.map_or(request.field_id.as_str(), |field| field.name.as_str());
+        let field_type = request
+            .field_type
+            .as_deref()
+            .filter(|value| !value.is_empty())
+            .or_else(|| {
+                field.map(|field| field.field_type.as_str()).filter(|value| !value.is_empty())
+            })
+            .unwrap_or("");
+        let option_source = field;
+
+        debug!(
+            owner = %project.owner,
+            number = project.number,
+            item_id = %request.item_id,
+            field_id = %request.field_id,
+            field_name = %field_name,
+            field_type = %field_type,
+            "setting project item field value"
+        );
+
+        if field.is_none() && request.field_type.is_none() {
+            return Err(command_failed(
+                "gh",
+                &format!("project field `{}` not found", request.field_id),
+            ));
+        }
+
+        let value = request.value.as_deref().filter(|value| !value.is_empty());
+        let mut args = vec![
+            "project".to_string(),
+            "item-edit".to_string(),
+            "--id".to_string(),
+            request.item_id.clone(),
+            "--project-id".to_string(),
+            meta.project_id.clone(),
+            "--field-id".to_string(),
+            request.field_id.clone(),
+        ];
+
+        let field_type_upper = field_type.to_ascii_uppercase();
+        match (field_type_upper.as_str(), value) {
+            (_, None) => {
+                args.push("--clear".to_string());
+            }
+            ("NUMBER", Some(value)) => {
+                let number: f64 = value.parse().map_err(|_| {
+                    command_failed(
+                        "gh",
+                        &format!("invalid number `{value}` for project field `{field_name}`"),
+                    )
+                })?;
+                args.push("--number".to_string());
+                args.push(number.to_string());
+            }
+            ("TEXT", Some(value)) => {
+                args.push("--text".to_string());
+                args.push(value.to_string());
+            }
+            ("DATE", Some(value)) => {
+                args.push("--date".to_string());
+                args.push(value.to_string());
+            }
+            ("SINGLE_SELECT", Some(value)) => {
+                let option = option_source
+                    .and_then(|field| field.options.iter().find(|option| option.name == value))
+                    .ok_or_else(|| {
+                        command_failed(
+                            "gh",
+                            &format!(
+                                "project field `{field_name}` has no single-select option `{value}`"
+                            ),
+                        )
+                    })?;
+                args.push("--single-select-option-id".to_string());
+                args.push(option.id.clone());
+            }
+            (other, Some(_)) => {
+                return Err(command_failed(
+                    "gh",
+                    &format!("unsupported project field type `{other}` for field `{field_name}`"),
+                ));
+            }
+        }
+
+        let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        self.run_output(&arg_refs).await?;
         Ok(())
     }
 
@@ -1035,6 +1219,43 @@ impl GhIssueViewResponse {
             parent_url: self.parent.map(|parent| parent.url),
         }
     }
+}
+
+/// Resolve a project field data type from `gh` JSON / GraphQL.
+///
+/// Older `gh project field-list` only exported GraphQL `__typename` as `type`
+/// (e.g. `ProjectV2Field`) and omitted `dataType`.
+fn normalize_project_data_type(data_type: &str, type_name: &str, field_id: &str) -> String {
+    let direct = data_type.trim();
+    if !direct.is_empty()
+        && !direct.eq_ignore_ascii_case("ProjectV2Field")
+        && !direct.starts_with("ProjectV2")
+    {
+        return direct.to_ascii_uppercase();
+    }
+
+    let type_name = type_name.trim();
+    match type_name {
+        "ProjectV2SingleSelectField" => return "SINGLE_SELECT".into(),
+        "ProjectV2IterationField" => return "ITERATION".into(),
+        "ProjectV2Field" => {}
+        other if !other.is_empty()
+            && !other.starts_with("ProjectV2")
+            && other.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_') =>
+        {
+            return other.to_ascii_uppercase();
+        }
+        _ => {}
+    }
+
+    // Node id prefixes from GitHub’s ProjectV2 field IDs.
+    if field_id.starts_with("PVTSSF_") {
+        return "SINGLE_SELECT".into();
+    }
+    if field_id.starts_with("PVTIF_") {
+        return "ITERATION".into();
+    }
+    String::new()
 }
 
 fn parse_issue_field_values(nodes: &[Value]) -> HashMap<String, String> {
@@ -1138,5 +1359,17 @@ mod tests {
             "GraphQL: Failed to add sub-issue #38 to parent #3. Issue may not contain duplicate sub-issues (addSubIssue)",
         );
         assert!(is_duplicate_sub_issue(&err));
+    }
+
+    #[test]
+    fn normalizes_field_list_types() {
+        assert_eq!(normalize_project_data_type("NUMBER", "ProjectV2Field", "PVTF_x"), "NUMBER");
+        assert_eq!(
+            normalize_project_data_type("", "ProjectV2SingleSelectField", "PVTF_x"),
+            "SINGLE_SELECT"
+        );
+        assert_eq!(normalize_project_data_type("", "ProjectV2Field", "PVTSSF_x"), "SINGLE_SELECT");
+        assert_eq!(normalize_project_data_type("", "ProjectV2Field", "PVTIF_x"), "ITERATION");
+        assert_eq!(normalize_project_data_type("", "ProjectV2Field", "PVTF_x"), "");
     }
 }

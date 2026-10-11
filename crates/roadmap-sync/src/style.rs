@@ -79,3 +79,12 @@ pub fn status_warn() -> String {
 pub fn status_error() -> String {
     err("error")
 }
+
+pub fn dim(text: impl AsRef<str>) -> String {
+    let text = text.as_ref();
+    if use_color() {
+        text.dimmed().to_string()
+    } else {
+        text.to_string()
+    }
+}

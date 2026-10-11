@@ -4,6 +4,7 @@ mod cli;
 mod config;
 mod doctor;
 mod error;
+mod field_sync;
 mod loader;
 mod model;
 mod notion;
@@ -13,6 +14,7 @@ mod platform;
 mod prefetch;
 mod pull;
 mod setup;
+mod show;
 mod style;
 mod targets;
 mod validate;
@@ -62,6 +64,7 @@ async fn main() -> Result<()> {
         Command::Pull { yes, overwrite, import_missing } => {
             cmd_pull(&roadmap_dir, yes, overwrite, import_missing).await
         }
+        Command::Show { issue, repo } => cmd_show(&roadmap_dir, issue, repo.as_deref()).await,
     }
 }
 
@@ -153,4 +156,10 @@ async fn cmd_pull(
     let config = RoadmapConfig::load(roadmap_dir)?;
     let platform = from_config(&config)?;
     pull::pull(roadmap_dir, platform.as_ref(), yes, overwrite, import_missing).await
+}
+
+async fn cmd_show(roadmap_dir: &Path, issue: u64, repo: Option<&str>) -> Result<()> {
+    let config = RoadmapConfig::load(roadmap_dir)?;
+    let platform = from_config(&config)?;
+    show::show_issue(roadmap_dir, platform.as_ref(), issue, repo).await
 }
