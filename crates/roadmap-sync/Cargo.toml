@@ -2,7 +2,7 @@
 name = "roadmap-sync"
 version = "0.1.0"
 edition = "2021"
-description = "Sync local roadmap markdown to GitHub Issues and Projects"
+description = "Sync local roadmap markdown to GitHub Issues/Projects and optional Notion"
 license = "MIT"
 publish = false
 

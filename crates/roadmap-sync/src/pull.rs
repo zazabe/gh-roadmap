@@ -10,8 +10,8 @@ use crate::config::{default_sync_map_path, RoadmapConfig};
 use crate::error::Result;
 use crate::loader::load;
 use crate::model::{
-    Issue, IssueFrontmatter, IssueState, IssueSyncEntry, Milestone, MilestoneFrontmatter,
-    MilestoneStatus, ProjectFieldMapping, Roadmap, SyncMap,
+    Issue, IssueFrontmatter, IssueState, Milestone, MilestoneFrontmatter, MilestoneStatus,
+    ProjectFieldMapping, Roadmap, SyncMap,
 };
 use crate::platform::{IssueRef, Platform, ProjectMeta, ProjectRef, RemoteIssueSnapshot};
 use crate::prefetch::ProjectItemState;
@@ -700,14 +700,12 @@ async fn import_missing_items(
             fields: issue_fields,
         };
         write_markdown_file(&issue_path, &issue_frontmatter, &remote.body)?;
-        sync_map.upsert_issue(
-            issue_id,
-            IssueSyncEntry {
-                repo: parsed.full_repo.clone(),
-                issue_number: Some(parsed.number),
-                project_item_id: project_items.get(issue_url).map(|item| item.item_id.clone()),
-                updated_at: Some(OffsetDateTime::now_utc().format(&Rfc3339).unwrap_or_default()),
-            },
+        sync_map.upsert_github_entry(
+            &issue_id,
+            parsed.full_repo.clone(),
+            Some(parsed.number),
+            project_items.get(issue_url).map(|item| item.item_id.clone()),
+            Some(OffsetDateTime::now_utc().format(&Rfc3339).unwrap_or_default()),
         );
         imported_issue_urls.insert(issue_url.clone());
         report.created_issues += 1;
@@ -716,14 +714,12 @@ async fn import_missing_items(
     for (number, pending) in pending_milestones {
         let issue_url = format!("https://github.com/{hub_full_repo}/issues/{number}");
         write_markdown_file(&pending.path, &pending.frontmatter, &pending.body)?;
-        sync_map.upsert_issue(
-            pending.frontmatter.id.clone(),
-            IssueSyncEntry {
-                repo: hub_full_repo.clone(),
-                issue_number: Some(number),
-                project_item_id: project_items.get(&issue_url).map(|item| item.item_id.clone()),
-                updated_at: Some(OffsetDateTime::now_utc().format(&Rfc3339).unwrap_or_default()),
-            },
+        sync_map.upsert_github_entry(
+            &pending.frontmatter.id,
+            hub_full_repo.clone(),
+            Some(number),
+            project_items.get(&issue_url).map(|item| item.item_id.clone()),
+            Some(OffsetDateTime::now_utc().format(&Rfc3339).unwrap_or_default()),
         );
         report.touched_milestones += 1;
     }
@@ -789,6 +785,7 @@ async fn ensure_milestone(
         id: id.clone(),
         title: remote.title,
         status: MilestoneStatus::Planned,
+        target_date: None,
         issues: Vec::new(),
         fields,
     };

@@ -14,6 +14,8 @@ pub struct RoadmapConfig {
 pub struct PlatformConfig {
     pub kind: String,
     pub github: Option<GithubConfig>,
+    #[serde(default)]
+    pub notion: Option<NotionConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -23,6 +25,13 @@ pub struct GithubConfig {
     pub project_number: u32,
     pub hub_repo: String,
     pub repos: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct NotionConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    pub database_id: String,
 }
 
 impl RoadmapConfig {
@@ -44,6 +53,25 @@ impl RoadmapConfig {
         self.platform.github.as_ref().ok_or_else(|| {
             Error::Config("missing [platform.github] section in roadmap.toml".into())
         })
+    }
+
+    pub fn notion_enabled(&self) -> bool {
+        self.platform.notion.as_ref().is_some_and(|n| n.enabled)
+    }
+
+    pub fn notion_config(&self) -> Result<&NotionConfig> {
+        let notion = self.platform.notion.as_ref().ok_or_else(|| {
+            Error::Config("missing [platform.notion] section in roadmap.toml".into())
+        })?;
+        if !notion.enabled {
+            return Err(Error::Config("[platform.notion] is present but enabled = false".into()));
+        }
+        if notion.database_id.trim().is_empty() {
+            return Err(Error::Config(
+                "[platform.notion].database_id is required when Notion is enabled".into(),
+            ));
+        }
+        Ok(notion)
     }
 
     pub fn repo_slug(&self, repo_id: &str) -> Result<String> {

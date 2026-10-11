@@ -17,6 +17,8 @@ pub struct SyncMap {
 pub struct SyncMapMeta {
     #[serde(default)]
     pub fields: SyncFieldMappings,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notion: Option<NotionSyncMeta>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -35,6 +37,39 @@ pub struct ProjectFieldMapping {
     pub field_type: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NotionSyncMeta {
+    pub database_id: String,
+    pub properties: NotionPropertyMappings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NotionPropertyMappings {
+    pub title: NotionPropertyRef,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<NotionStatusMapping>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_date: Option<NotionPropertyRef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NotionPropertyRef {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub field_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NotionStatusMapping {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub field_type: String,
+    /// Local milestone status (`planned`, …) → Notion option name.
+    pub values: HashMap<String, String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IssueSyncEntry {
     pub repo: String,
@@ -42,6 +77,8 @@ pub struct IssueSyncEntry {
     pub issue_number: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_item_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notion_page_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
 }
@@ -85,6 +122,36 @@ impl SyncMap {
     pub fn upsert_issue(&mut self, id: impl Into<String>, entry: IssueSyncEntry) {
         self.items.insert(id.into(), entry);
     }
+
+    /// Update GitHub fields while preserving an existing Notion page id.
+    pub fn upsert_github_entry(
+        &mut self,
+        id: &str,
+        repo: String,
+        issue_number: Option<u64>,
+        project_item_id: Option<String>,
+        updated_at: Option<String>,
+    ) {
+        let notion_page_id = self.items.get(id).and_then(|e| e.notion_page_id.clone());
+        self.upsert_issue(
+            id,
+            IssueSyncEntry { repo, issue_number, project_item_id, notion_page_id, updated_at },
+        );
+    }
+
+    pub fn set_notion_page_id(&mut self, id: &str, page_id: String, updated_at: Option<String>) {
+        let entry = self.items.entry(id.to_string()).or_insert_with(|| IssueSyncEntry {
+            repo: String::new(),
+            issue_number: None,
+            project_item_id: None,
+            notion_page_id: None,
+            updated_at: None,
+        });
+        entry.notion_page_id = Some(page_id);
+        if updated_at.is_some() {
+            entry.updated_at = updated_at;
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -101,5 +168,50 @@ impl Roadmap {
 
     pub fn milestone_by_id(&self, id: &str) -> Option<&Milestone> {
         self.milestones.iter().find(|milestone| milestone.id() == id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serde_notion_meta_and_page_id() {
+        let raw = r#"{
+  "_meta": {
+    "notion": {
+      "database_id": "db-1",
+      "properties": {
+        "title": { "id": "title", "name": "Name", "type": "title" },
+        "status": {
+          "id": "abc",
+          "name": "Status",
+          "type": "status",
+          "values": { "planned": "Planned" }
+        }
+      }
+    }
+  },
+  "items": {
+    "milestone-x": {
+      "repo": "acme/hub",
+      "issue_number": 1,
+      "notion_page_id": "page-1"
+    }
+  }
+}"#;
+        let map: SyncMap = serde_json::from_str(raw).unwrap();
+        assert_eq!(map.meta.notion.as_ref().unwrap().database_id, "db-1");
+        assert_eq!(map.items["milestone-x"].notion_page_id.as_deref(), Some("page-1"));
+        map.meta.notion.as_ref().unwrap().properties.status.as_ref().unwrap();
+    }
+
+    #[test]
+    fn upsert_github_preserves_notion_page() {
+        let mut map = SyncMap::default();
+        map.set_notion_page_id("m1", "page-9".into(), None);
+        map.upsert_github_entry("m1", "acme/hub".into(), Some(3), Some("item".into()), None);
+        assert_eq!(map.items["m1"].notion_page_id.as_deref(), Some("page-9"));
+        assert_eq!(map.items["m1"].issue_number, Some(3));
     }
 }

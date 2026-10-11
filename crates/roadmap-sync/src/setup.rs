@@ -27,6 +27,8 @@ pub struct SetupOptions {
     pub force: bool,
     pub no_skill: bool,
     pub skill_dir: Option<PathBuf>,
+    /// Only configure Notion (requires existing roadmap.toml).
+    pub notion_only: bool,
 }
 
 pub async fn run(roadmap_dir: &Path, opts: SetupOptions) -> Result<()> {
@@ -38,6 +40,10 @@ pub async fn run(roadmap_dir: &Path, opts: SetupOptions) -> Result<()> {
 
     println!("{}", style::heading("roadmap setup"));
     println!();
+
+    if opts.notion_only {
+        return run_notion_only(roadmap_dir).await;
+    }
 
     ensure_gh_on_path()?;
     let host = DEFAULT_HOST.to_string();
@@ -57,7 +63,24 @@ pub async fn run(roadmap_dir: &Path, opts: SetupOptions) -> Result<()> {
     let hub_repo = pick_hub_repo(&repos)?;
 
     scaffold_tree(roadmap_dir, &owner, &repos, opts.force)?;
-    write_roadmap_toml(roadmap_dir, &host, &owner, project.number, &hub_repo, &repos, opts.force)?;
+
+    println!();
+    println!("{}", style::heading("Notion (optional)"));
+    let notion = crate::notion::setup::configure_notion(roadmap_dir).await?;
+    if notion.is_none() {
+        clear_notion_sync_meta(roadmap_dir)?;
+    }
+
+    write_roadmap_toml(
+        roadmap_dir,
+        &host,
+        &owner,
+        project.number,
+        &hub_repo,
+        &repos,
+        notion.as_ref().map(|n| &n.config),
+        opts.force,
+    )?;
 
     maybe_install_skill(&opts)?;
 
@@ -78,6 +101,75 @@ pub async fn run(roadmap_dir: &Path, opts: SetupOptions) -> Result<()> {
     } else {
         Err(Error::Auth)
     }
+}
+
+async fn run_notion_only(roadmap_dir: &Path) -> Result<()> {
+    let path = roadmap_dir.join("roadmap.toml");
+    if !path.exists() {
+        return Err(Error::Config(format!(
+            "{} missing — run full `roadmap setup` first",
+            path.display()
+        )));
+    }
+
+    println!("{}", style::heading("Notion"));
+    let notion = crate::notion::setup::configure_notion(roadmap_dir).await?;
+    if notion.is_none() {
+        clear_notion_sync_meta(roadmap_dir)?;
+    }
+    merge_notion_into_toml(&path, notion.as_ref().map(|n| &n.config))?;
+
+    println!();
+    println!("{}", style::ok("Notion setup complete — running doctor…"));
+    println!();
+    let (report, config) = doctor::run(roadmap_dir).await?;
+    doctor::print_report(&report, &config);
+    if report.is_ok() {
+        Ok(())
+    } else {
+        Err(Error::Auth)
+    }
+}
+
+fn clear_notion_sync_meta(roadmap_dir: &Path) -> Result<()> {
+    use crate::config::default_sync_map_path;
+    use crate::model::SyncMap;
+    let sync_map_path = default_sync_map_path(roadmap_dir);
+    if !sync_map_path.exists() {
+        return Ok(());
+    }
+    let mut sync_map = SyncMap::load(&sync_map_path)?;
+    if sync_map.meta.notion.is_some() {
+        sync_map.meta.notion = None;
+        sync_map.save(&sync_map_path)?;
+        println!("  cleared Notion mapping in {}", sync_map_path.display());
+    }
+    Ok(())
+}
+
+fn merge_notion_into_toml(path: &Path, notion: Option<&crate::config::NotionConfig>) -> Result<()> {
+    let mut raw = std::fs::read_to_string(path)
+        .map_err(|e| Error::Config(format!("failed to read {}: {e}", path.display())))?;
+
+    // Drop an existing [platform.notion] section (and following keys until next [section]).
+    if let Some(start) = raw.find("[platform.notion]") {
+        let after = &raw[start + "[platform.notion]".len()..];
+        let end_rel = after.find("\n[").map_or(after.len(), |i| i + 1);
+        let end = start + "[platform.notion]".len() + end_rel;
+        // Include preceding newline if present
+        let start = if start > 0 && raw.as_bytes()[start - 1] == b'\n' { start - 1 } else { start };
+        raw.replace_range(start..end, "");
+    }
+    raw = raw.trim_end().to_string();
+    raw.push('\n');
+
+    if let Some(notion) = notion {
+        raw.push_str(&crate::notion::setup::notion_toml_section(notion));
+    }
+
+    std::fs::write(path, raw)?;
+    println!("  updated {}", path.display());
+    Ok(())
 }
 
 fn ensure_gh_on_path() -> Result<()> {
@@ -365,6 +457,7 @@ fn write_roadmap_toml(
     project_number: u32,
     hub_repo: &str,
     repos: &[(String, String)],
+    notion: Option<&crate::config::NotionConfig>,
     force: bool,
 ) -> Result<()> {
     let path = roadmap_dir.join("roadmap.toml");
@@ -386,7 +479,7 @@ fn write_roadmap_toml(
         let _ = writeln!(repos_toml, "{k} = \"{v}\"");
     }
 
-    let body = format!(
+    let mut body = format!(
         r#"[platform]
 kind = "github"
 
@@ -399,6 +492,9 @@ hub_repo = "{hub_repo}"
 [platform.github.repos]
 {repos_toml}"#
     );
+    if let Some(notion) = notion {
+        body.push_str(&crate::notion::setup::notion_toml_section(notion));
+    }
     std::fs::write(&path, body)?;
     println!("  wrote {}", path.display());
     Ok(())
@@ -440,7 +536,7 @@ fn maybe_install_skill(opts: &SetupOptions) -> Result<()> {
     Ok(())
 }
 
-fn prompt_line(label: &str, default: Option<&str>) -> Result<String> {
+pub(crate) fn prompt_line(label: &str, default: Option<&str>) -> Result<String> {
     print!("{label}: ");
     io::stdout().flush()?;
     let mut line = String::new();
@@ -453,7 +549,7 @@ fn prompt_line(label: &str, default: Option<&str>) -> Result<String> {
     }
 }
 
-fn prompt_yes_no(label: &str, default_yes: bool) -> Result<bool> {
+pub(crate) fn prompt_yes_no(label: &str, default_yes: bool) -> Result<bool> {
     let hint = if default_yes { "Y/n" } else { "y/N" };
     let answer = prompt_line(&format!("{label} [{hint}]"), None)?;
     if answer.is_empty() {
@@ -466,11 +562,11 @@ fn prompt_yes_no(label: &str, default_yes: bool) -> Result<bool> {
     }
 }
 
-fn prompt_index(label: &str, len: usize) -> Result<usize> {
+pub(crate) fn prompt_index(label: &str, len: usize) -> Result<usize> {
     prompt_index_default(label, len, 1)
 }
 
-fn prompt_index_default(label: &str, len: usize, default: usize) -> Result<usize> {
+pub(crate) fn prompt_index_default(label: &str, len: usize, default: usize) -> Result<usize> {
     let answer = prompt_line(&format!("{label} [{default}]"), Some(&default.to_string()))?;
     let n: usize = answer
         .parse()

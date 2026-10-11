@@ -96,11 +96,14 @@ Epic <n>: <human-readable title>
 ## Sync tool
 
 ```bash
-roadmap validate          # local checks only
-roadmap plan              # dry-run
-roadmap apply --yes       # sync to GitHub Issues + Projects
-roadmap pull --yes        # pull remote → local markdown
-roadmap doctor            # auth / permission checks
+roadmap validate                    # local checks only
+roadmap plan                        # dry-run (all enabled platforms)
+roadmap plan --platform github      # GitHub only
+roadmap apply --yes                 # sync to all enabled platforms
+roadmap apply --yes --platform notion   # Notion milestone report only
+roadmap pull --yes                  # pull remote → local markdown (GitHub)
+roadmap doctor                      # auth / permission checks
+roadmap setup --notion-only         # configure / refresh Notion mapping
 ```
 
 From a source checkout of this CLI:
@@ -114,6 +117,11 @@ issues in configured repos are linked with `gh issue edit --parent`.
 
 Requires the [GitHub CLI](https://cli.github.com/) (`gh`) on `PATH`, authenticated
 with `repo` and `project` scopes (or `GH_TOKEN` / `GITHUB_TOKEN`).
+
+**Optional Notion report:** enable during `roadmap setup` (or
+`roadmap setup --notion-only`). Uses the Notion CLI (`ntn login`, or
+`NOTION_API_TOKEN`). Push-only: milestone title/status/(optional) date → a
+Notion database. Select targets with `--platform github,notion`.
 
 ---
 

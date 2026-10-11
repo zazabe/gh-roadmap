@@ -14,3 +14,8 @@ hub_repo = "roadmap"
 # Frontmatter `repo:` key → GitHub repo name (without owner)
 app = "app"
 roadmap = "roadmap"
+
+# Optional: push-only milestone report to Notion (configure via `roadmap setup`)
+# [platform.notion]
+# enabled = true
+# database_id = "…"

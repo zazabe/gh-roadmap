@@ -82,7 +82,49 @@ pub async fn run(roadmap_dir: &Path) -> Result<(DoctorReport, RoadmapConfig)> {
         Err(err) => report.checks.push(DoctorReport::fail("project write", err.to_string())),
     }
 
+    if config.notion_enabled() {
+        check_notion(&mut report, &config).await;
+    }
+
     Ok((report, config))
+}
+
+async fn check_notion(report: &mut DoctorReport, config: &RoadmapConfig) {
+    use crate::notion::NotionClient;
+
+    match NotionClient::ensure_on_path() {
+        Ok(()) => report.checks.push(DoctorReport::pass("ntn", "found on PATH")),
+        Err(err) => {
+            report.checks.push(DoctorReport::fail("ntn", err.to_string()));
+            return;
+        }
+    }
+
+    let client = NotionClient::new();
+    match client.auth_status().await {
+        Ok(who) => {
+            report.checks.push(DoctorReport::pass("ntn auth", format!("logged in as {who}")));
+        }
+        Err(err) => {
+            report.checks.push(DoctorReport::fail("ntn auth", err.to_string()));
+            return;
+        }
+    }
+
+    let Ok(notion) = config.notion_config() else {
+        report
+            .checks
+            .push(DoctorReport::fail("notion config", "enabled but invalid [platform.notion]"));
+        return;
+    };
+
+    match client.get_database(&notion.database_id).await {
+        Ok(_) => report.checks.push(DoctorReport::pass(
+            "notion database",
+            format!("can read database {}", notion.database_id),
+        )),
+        Err(err) => report.checks.push(DoctorReport::fail("notion database", err.to_string())),
+    }
 }
 
 pub fn print_report(report: &DoctorReport, config: &RoadmapConfig) {
@@ -113,5 +155,12 @@ pub fn print_report(report: &DoctorReport, config: &RoadmapConfig) {
         eprintln!();
         eprintln!("Or re-auth with classic scopes:");
         eprintln!("  gh auth refresh -h github.com -s repo,project");
+        if config.notion_enabled() {
+            eprintln!();
+            eprintln!("Notion:");
+            eprintln!("  ntn login");
+            eprintln!("  # or: export NOTION_API_TOKEN=…");
+            eprintln!("  roadmap setup --notion-only");
+        }
     }
 }

@@ -6,6 +6,7 @@ mod doctor;
 mod error;
 mod loader;
 mod model;
+mod notion;
 mod parse;
 mod plan;
 mod platform;
@@ -13,6 +14,7 @@ mod prefetch;
 mod pull;
 mod setup;
 mod style;
+mod targets;
 mod validate;
 mod write;
 
@@ -27,6 +29,7 @@ use crate::error::Result;
 use crate::loader::load;
 use crate::plan::{build_plan, print_plan_with_milestones};
 use crate::platform::from_config;
+use crate::targets::{format_targets, parse_platform_list, resolve_targets, SyncTarget};
 use crate::validate::{print_report, validate, validate_or_err};
 
 #[tokio::main]
@@ -44,12 +47,18 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Command::Validate => cmd_validate(&roadmap_dir),
-        Command::Setup { force, no_skill, skill_dir } => {
-            setup::run(&roadmap_dir, setup::SetupOptions { force, no_skill, skill_dir }).await
+        Command::Setup { force, no_skill, skill_dir, notion_only } => {
+            setup::run(
+                &roadmap_dir,
+                setup::SetupOptions { force, no_skill, skill_dir, notion_only },
+            )
+            .await
         }
         Command::Doctor => cmd_doctor(&roadmap_dir).await,
-        Command::Plan { offline } => cmd_plan(&roadmap_dir, offline).await,
-        Command::Apply { yes } => cmd_apply(&roadmap_dir, yes).await,
+        Command::Plan { offline, platform } => {
+            cmd_plan(&roadmap_dir, offline, platform.as_deref()).await
+        }
+        Command::Apply { yes, platform } => cmd_apply(&roadmap_dir, yes, platform.as_deref()).await,
         Command::Pull { yes, overwrite, import_missing } => {
             cmd_pull(&roadmap_dir, yes, overwrite, import_missing).await
         }
@@ -78,29 +87,61 @@ fn cmd_validate(roadmap_dir: &Path) -> Result<()> {
     }
 }
 
-async fn cmd_plan(roadmap_dir: &Path, offline: bool) -> Result<()> {
+async fn cmd_plan(roadmap_dir: &Path, offline: bool, platform: Option<&str>) -> Result<()> {
     let config = RoadmapConfig::load(roadmap_dir)?;
     let roadmap = load(roadmap_dir)?;
     validate_or_err(&roadmap, &config)?;
 
-    let cache = if offline {
-        None
-    } else {
-        let platform = from_config(&config)?;
-        let cache = prefetch::fetch(&roadmap, &config, platform.as_ref()).await?;
-        println!();
-        Some(cache)
-    };
+    let requested = parse_platform_list(platform)?;
+    let targets = resolve_targets(&config, requested.as_ref())?;
+    println!("platforms: {}", format_targets(&targets));
+    println!();
 
-    let actions = build_plan(&roadmap, &config, cache.as_ref())?;
-    print_plan_with_milestones(&actions, &roadmap);
+    if targets.contains(&SyncTarget::Github) {
+        let cache = if offline {
+            None
+        } else {
+            let platform = from_config(&config)?;
+            let cache = prefetch::fetch(&roadmap, &config, platform.as_ref()).await?;
+            println!();
+            Some(cache)
+        };
+
+        let actions = build_plan(&roadmap, &config, cache.as_ref())?;
+        print_plan_with_milestones(&actions, &roadmap);
+    }
+
+    if targets.contains(&SyncTarget::Notion) {
+        if targets.contains(&SyncTarget::Github) {
+            println!();
+        }
+        let notion_plan = notion::build_notion_plan(&roadmap)?;
+        notion::print_notion_plan(&notion_plan);
+    }
+
     Ok(())
 }
 
-async fn cmd_apply(roadmap_dir: &Path, yes: bool) -> Result<()> {
+async fn cmd_apply(roadmap_dir: &Path, yes: bool, platform: Option<&str>) -> Result<()> {
     let config = RoadmapConfig::load(roadmap_dir)?;
-    let platform = from_config(&config)?;
-    apply::apply(roadmap_dir, platform.as_ref(), yes).await
+    let requested = parse_platform_list(platform)?;
+    let targets = resolve_targets(&config, requested.as_ref())?;
+    println!("platforms: {}", format_targets(&targets));
+    println!();
+
+    if targets.contains(&SyncTarget::Github) {
+        let platform = from_config(&config)?;
+        apply::apply(roadmap_dir, platform.as_ref(), yes).await?;
+    }
+
+    if targets.contains(&SyncTarget::Notion) {
+        if targets.contains(&SyncTarget::Github) {
+            println!();
+        }
+        notion::apply_notion(roadmap_dir, yes).await?;
+    }
+
+    Ok(())
 }
 
 async fn cmd_pull(

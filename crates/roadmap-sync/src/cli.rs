@@ -28,12 +28,18 @@ pub enum Command {
         /// Install the agent skill to this directory (default: .cursor/skills/roadmap)
         #[arg(long)]
         skill_dir: Option<PathBuf>,
+        /// Only configure Notion report (requires existing roadmap.toml)
+        #[arg(long)]
+        notion_only: bool,
     },
     /// Show planned sync actions (dry-run)
     Plan {
         /// Use only local files and sync-map (no GitHub prefetch)
         #[arg(long)]
         offline: bool,
+        /// Comma-separated platforms to include (github, notion). Default: all enabled.
+        #[arg(long, value_name = "LIST")]
+        platform: Option<String>,
     },
     /// Check GitHub authentication and token permissions
     Doctor,
@@ -42,6 +48,9 @@ pub enum Command {
         /// Skip confirmation prompt
         #[arg(long)]
         yes: bool,
+        /// Comma-separated platforms to include (github, notion). Default: all enabled.
+        #[arg(long, value_name = "LIST")]
+        platform: Option<String>,
     },
     /// Pull issue bodies + project field changes from GitHub into local markdown
     Pull {

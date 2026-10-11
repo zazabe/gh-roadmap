@@ -8,7 +8,7 @@ use crate::body_refs::BodyRefResolver;
 use crate::config::{default_sync_map_path, RoadmapConfig};
 use crate::error::Result;
 use crate::loader::load;
-use crate::model::{IssueSyncEntry, Milestone, ProjectFieldMapping, SyncMap};
+use crate::model::{Milestone, ProjectFieldMapping, SyncMap};
 use crate::plan::{
     build_plan, create_epic_request, create_request, issue_state, print_plan_with_milestones,
     update_epic_request, update_request, ActionKind, JobKind, PlanJob,
@@ -239,16 +239,12 @@ async fn execute_milestone_job(
                 print_step_ok(&new_path.display().to_string());
             }
             ActionKind::UpdateSyncMap => {
-                sync_map.upsert_issue(
+                sync_map.upsert_github_entry(
                     milestone.id(),
-                    IssueSyncEntry {
-                        repo: hub_full_repo.to_string(),
-                        issue_number: ctx.issue_number,
-                        project_item_id: ctx.project_item_id.clone(),
-                        updated_at: Some(
-                            OffsetDateTime::now_utc().format(&Rfc3339).unwrap_or_default(),
-                        ),
-                    },
+                    hub_full_repo.to_string(),
+                    ctx.issue_number,
+                    ctx.project_item_id.clone(),
+                    Some(OffsetDateTime::now_utc().format(&Rfc3339).unwrap_or_default()),
                 );
                 print_step_ok(milestone.id());
             }
@@ -406,16 +402,12 @@ async fn execute_issue_job(
                 print_step_ok(&new_path.display().to_string());
             }
             ActionKind::UpdateSyncMap => {
-                sync_map.upsert_issue(
+                sync_map.upsert_github_entry(
                     issue.id(),
-                    IssueSyncEntry {
-                        repo: full_repo.to_string(),
-                        issue_number: ctx.issue_number,
-                        project_item_id: ctx.project_item_id.clone(),
-                        updated_at: Some(
-                            OffsetDateTime::now_utc().format(&Rfc3339).unwrap_or_default(),
-                        ),
-                    },
+                    full_repo.to_string(),
+                    ctx.issue_number,
+                    ctx.project_item_id.clone(),
+                    Some(OffsetDateTime::now_utc().format(&Rfc3339).unwrap_or_default()),
                 );
                 print_step_ok(issue.id());
             }

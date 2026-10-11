@@ -34,6 +34,8 @@ cargo install --path crates/roadmap-sync --locked --force
 - [GitHub CLI](https://cli.github.com/) (`gh`) on `PATH`
 - Auth: `gh auth login` with `repo` and `project` scopes, or `GH_TOKEN` /
   `GITHUB_TOKEN`
+- Optional Notion milestone report: [Notion CLI](https://developers.notion.com/cli/get-started/overview)
+  (`ntn`) on `PATH`, `ntn login` (or `NOTION_API_TOKEN`)
 
 `roadmap validate` and `roadmap plan --offline` work without network/`gh`.
 
@@ -73,12 +75,16 @@ roadmap --roadmap-dir path/to/roadmap validate
 
 | Command | Purpose |
 |---------|---------|
-| `setup` | Interactive auth + scaffold + `roadmap.toml` |
+| `setup` | Interactive auth + scaffold + `roadmap.toml` (optional Notion) |
+| `setup --notion-only` | Reconfigure Notion database + field mapping |
 | `validate` | Local checks only |
-| `plan [--offline]` | Dry-run create/update actions |
-| `apply [--yes]` | Sync to GitHub |
-| `pull [--yes] [--overwrite] [--import-missing]` | Pull remote → local |
+| `plan [--offline] [--platform LIST]` | Dry-run create/update actions |
+| `apply [--yes] [--platform LIST]` | Sync to enabled platforms (GitHub + optional Notion) |
+| `pull [--yes] [--overwrite] [--import-missing]` | Pull remote → local (GitHub only) |
 | `doctor` | Auth and permission checks |
+
+`--platform` is a comma-separated list (`github`, `notion`). Default: all
+enabled platforms. Notion is push-only (milestones → database pages).
 
 ```bash
 cargo run --bin roadmap -- --roadmap-dir examples/basic/roadmap validate
