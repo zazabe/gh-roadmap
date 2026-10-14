@@ -31,6 +31,9 @@ pub enum Command {
         /// Only configure Notion report (requires existing roadmap.toml)
         #[arg(long)]
         notion_only: bool,
+        /// Only (re)install the agent skill; implies overwrite, no auth/toml
+        #[arg(long)]
+        skill_only: bool,
     },
     /// Show planned sync actions (dry-run)
     Plan {

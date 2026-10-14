@@ -23,15 +23,31 @@ const SKILL_FILES: &[(&str, &str)] = &[
     ("templates.md", include_str!("../../../.cursor/skills/roadmap/templates.md")),
 ];
 
+#[allow(clippy::struct_excessive_bools)]
 pub struct SetupOptions {
     pub force: bool,
     pub no_skill: bool,
     pub skill_dir: Option<PathBuf>,
     /// Only configure Notion (requires existing roadmap.toml).
     pub notion_only: bool,
+    /// Only (re)install the agent skill; implies overwrite.
+    pub skill_only: bool,
 }
 
 pub async fn run(roadmap_dir: &Path, opts: SetupOptions) -> Result<()> {
+    if opts.skill_only && opts.notion_only {
+        return Err(Error::Config("pass only one of --skill-only or --notion-only".into()));
+    }
+    if opts.skill_only && opts.no_skill {
+        return Err(Error::Config("cannot combine --skill-only with --no-skill".into()));
+    }
+
+    if opts.skill_only {
+        println!("{}", style::heading("roadmap setup --skill-only"));
+        println!();
+        return install_skill(&opts);
+    }
+
     if !io::stdin().is_terminal() {
         return Err(Error::Config(
             "roadmap setup requires an interactive terminal (stdin is not a TTY)".into(),
@@ -101,6 +117,29 @@ pub async fn run(roadmap_dir: &Path, opts: SetupOptions) -> Result<()> {
     } else {
         Err(Error::Auth)
     }
+}
+
+fn install_skill(opts: &SetupOptions) -> Result<()> {
+    let dest = opts.skill_dir.clone().unwrap_or_else(|| PathBuf::from(DEFAULT_SKILL_DIR));
+    // --skill-only refreshes bundled skill docs; overwrite is implied.
+    let force = opts.force || opts.skill_only;
+    if dest.exists() && !force {
+        let entries = std::fs::read_dir(&dest)?.count();
+        if entries > 0 {
+            return Err(Error::Config(format!(
+                "{} is not empty (pass --force to overwrite)",
+                dest.display()
+            )));
+        }
+    }
+    std::fs::create_dir_all(&dest)?;
+    for (name, contents) in SKILL_FILES {
+        let path = dest.join(name);
+        std::fs::write(&path, contents)?;
+        println!("  wrote {}", path.display());
+    }
+    println!("[{}] skill installed", style::status_ok());
+    Ok(())
 }
 
 async fn run_notion_only(roadmap_dir: &Path) -> Result<()> {
@@ -516,23 +555,7 @@ fn maybe_install_skill(opts: &SetupOptions) -> Result<()> {
         return Ok(());
     }
 
-    if dest.exists() && !opts.force {
-        let entries = std::fs::read_dir(&dest)?.count();
-        if entries > 0 {
-            return Err(Error::Config(format!(
-                "{} is not empty (pass --force to overwrite)",
-                dest.display()
-            )));
-        }
-    }
-    std::fs::create_dir_all(&dest)?;
-    for (name, contents) in SKILL_FILES {
-        let path = dest.join(name);
-        std::fs::write(&path, contents)?;
-        println!("  wrote {}", path.display());
-    }
-    println!("[{}] skill installed", style::status_ok());
-    Ok(())
+    install_skill(opts)
 }
 
 pub(crate) fn prompt_line(label: &str, default: Option<&str>) -> Result<String> {
@@ -667,7 +690,7 @@ struct RepoEntry {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_owner_from_remote;
+    use super::{install_skill, parse_owner_from_remote, SetupOptions, SKILL_FILES};
 
     #[test]
     fn parses_ssh_remote() {
@@ -680,5 +703,47 @@ mod tests {
             parse_owner_from_remote("https://github.com/acme/app.git").as_deref(),
             Some("acme")
         );
+    }
+
+    #[test]
+    fn skill_only_overwrites_existing_skill_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let skill_dir = dir.path().join("skills");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(skill_dir.join("SKILL.md"), "old").unwrap();
+
+        install_skill(&SetupOptions {
+            force: false,
+            no_skill: false,
+            skill_dir: Some(skill_dir.clone()),
+            notion_only: false,
+            skill_only: true,
+        })
+        .unwrap();
+
+        let skill = std::fs::read_to_string(skill_dir.join("SKILL.md")).unwrap();
+        assert_ne!(skill, "old");
+        assert!(skill.contains("Roadmap"));
+        for (name, _) in SKILL_FILES {
+            assert!(skill_dir.join(name).is_file(), "missing {name}");
+        }
+    }
+
+    #[test]
+    fn install_skill_without_force_rejects_nonempty() {
+        let dir = tempfile::tempdir().unwrap();
+        let skill_dir = dir.path().join("skills");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(skill_dir.join("SKILL.md"), "old").unwrap();
+
+        let err = install_skill(&SetupOptions {
+            force: false,
+            no_skill: false,
+            skill_dir: Some(skill_dir),
+            notion_only: false,
+            skill_only: false,
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("not empty"));
     }
 }

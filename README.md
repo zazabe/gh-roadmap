@@ -48,7 +48,9 @@ cargo install --path crates/roadmap-sync --locked --force
    roadmap setup
    ```
 
-   Flags: `--force` (overwrite), `--no-skill`, `--skill-dir <path>`.
+   Flags: `--force` (overwrite), `--no-skill`, `--skill-dir <path>`,
+   `--skill-only` (refresh skill files only; implies overwrite),
+   `--notion-only`.
 
 2. Fill `projects/` with current-state docs.
 
@@ -76,6 +78,7 @@ roadmap --roadmap-dir path/to/roadmap validate
 | Command | Purpose |
 |---------|---------|
 | `setup` | Interactive auth + scaffold + `roadmap.toml` (optional Notion) |
+| `setup --skill-only` | Reinstall agent skill files only (implies overwrite) |
 | `setup --notion-only` | Reconfigure Notion data source + field mapping |
 | `validate` | Local checks only |
 | `overview [filters…]` | Markdown index of local milestones + issues (no network) |

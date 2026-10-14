@@ -52,10 +52,10 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Command::Validate => cmd_validate(&roadmap_dir),
-        Command::Setup { force, no_skill, skill_dir, notion_only } => {
+        Command::Setup { force, no_skill, skill_dir, notion_only, skill_only } => {
             setup::run(
                 &roadmap_dir,
-                setup::SetupOptions { force, no_skill, skill_dir, notion_only },
+                setup::SetupOptions { force, no_skill, skill_dir, notion_only, skill_only },
             )
             .await
         }
