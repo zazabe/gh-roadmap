@@ -78,11 +78,16 @@ roadmap --roadmap-dir path/to/roadmap validate
 | `setup` | Interactive auth + scaffold + `roadmap.toml` (optional Notion) |
 | `setup --notion-only` | Reconfigure Notion data source + field mapping |
 | `validate` | Local checks only |
+| `overview [filters…]` | Markdown index of local milestones + issues (no network) |
 | `plan [--offline] [--platform LIST]` | Dry-run create/update actions |
 | `apply [--yes] [--platform LIST]` | Sync to enabled platforms (GitHub + optional Notion) |
 | `pull [--yes] [--overwrite] [--import-missing]` | Pull remote → local (GitHub only) |
 | `show --issue N [--repo ID]` | Inspect local vs GitHub fields / sync drift |
 | `doctor` | Auth and permission checks |
+
+`overview` filters: `--milestone`, `--status`, `--exclude-status`,
+`--exclude-milestone`, `--state`, `--repo`, `--dated`, `--issues-only`,
+`--milestones-only`, `--flat`.
 
 `--platform` is a comma-separated list (`github`, `notion`). Default: all
 enabled platforms. Notion is push-only (milestones → data source pages).

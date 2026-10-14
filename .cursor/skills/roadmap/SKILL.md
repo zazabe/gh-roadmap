@@ -4,8 +4,9 @@ description: >-
   Create and update local roadmap files as markdown milestones and issues under
   roadmap/, using projects/ as the current-state reference. Use when planning
   milestones, epics, roadmap issues, closing or completing work, adding work to
-  the roadmap, or updating projects/ alongside roadmap. GitHub sync via the
-  `roadmap` CLI (`roadmap plan|apply`).
+  the roadmap, scanning schedule/status (`roadmap overview`), or updating
+  projects/ alongside roadmap. GitHub sync via the `roadmap` CLI
+  (`roadmap plan|apply|overview`).
 ---
 
 # Roadmap (local markdown)
@@ -97,6 +98,7 @@ Epic <n>: <human-readable title>
 
 ```bash
 roadmap validate                    # local checks only
+roadmap overview                    # markdown index of milestones + issues
 roadmap plan                        # dry-run (all enabled platforms)
 roadmap plan --platform github      # GitHub only
 roadmap apply --yes                 # sync to all enabled platforms
@@ -105,6 +107,36 @@ roadmap pull --yes                  # pull remote → local markdown (GitHub)
 roadmap doctor                      # auth / permission checks
 roadmap setup --notion-only         # configure / refresh Notion mapping
 ```
+
+### Overview (prefer this over ad-hoc scripts)
+
+When you need a schedule / status scan of the local roadmap, run **`roadmap overview`**
+instead of writing a one-off parser. It is offline (reads `roadmap/` only) and prints
+agent-friendly markdown: milestone table, then issues grouped under each epic
+(sorted by `Epic <n>`).
+
+```bash
+roadmap overview
+roadmap overview --status Todo --state open
+roadmap overview --milestone extraction --dated
+roadmap overview --exclude-milestone ideas --exclude-status Backlog
+roadmap overview --flat --issues-only
+roadmap overview --milestones-only
+```
+
+| Flag | Effect |
+|------|--------|
+| `--milestone <substr>` | Keep milestones/issues whose milestone id contains substr (repeatable, OR) |
+| `--status <name>` | Keep rows whose project `fields.status` matches (repeatable, OR) |
+| `--exclude-status <name>` | Drop matching project status |
+| `--exclude-milestone <substr>` | Drop milestone ids containing substr (e.g. `ideas`) |
+| `--state open\|closed` | Issue `state` only |
+| `--repo <id>` | Issue `repo` only |
+| `--dated` | Only rows with `start_date` or `target_date` |
+| `--issues-only` / `--milestones-only` | Section toggles |
+| `--flat` | Single issue table (columns include milestone) |
+
+Use `--roadmap-dir` when the tree is not `./roadmap`.
 
 From a source checkout of this CLI:
 

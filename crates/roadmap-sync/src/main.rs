@@ -8,6 +8,7 @@ mod field_sync;
 mod loader;
 mod model;
 mod notion;
+mod overview;
 mod parse;
 mod plan;
 mod platform;
@@ -29,6 +30,8 @@ use crate::cli::{Cli, Command};
 use crate::config::RoadmapConfig;
 use crate::error::Result;
 use crate::loader::load;
+use crate::model::IssueState;
+use crate::overview::OverviewFilter;
 use crate::plan::{build_plan, print_plan_with_milestones};
 use crate::platform::from_config;
 use crate::targets::{format_targets, parse_platform_list, resolve_targets, SyncTarget};
@@ -65,6 +68,44 @@ async fn main() -> Result<()> {
             cmd_pull(&roadmap_dir, yes, overwrite, import_missing).await
         }
         Command::Show { issue, repo } => cmd_show(&roadmap_dir, issue, repo.as_deref()).await,
+        Command::Overview {
+            milestone,
+            status,
+            exclude_status,
+            exclude_milestone,
+            state,
+            repo,
+            dated,
+            issues_only,
+            milestones_only,
+            flat,
+        } => {
+            let state = match state.as_deref() {
+                Some("open") => Some(IssueState::Open),
+                Some("closed") => Some(IssueState::Closed),
+                None => None,
+                Some(other) => {
+                    return Err(error::Error::Config(format!(
+                        "invalid --state `{other}` (expected open or closed)"
+                    )));
+                }
+            };
+            overview::overview(
+                &roadmap_dir,
+                &OverviewFilter {
+                    milestones: milestone,
+                    statuses: status,
+                    exclude_statuses: exclude_status,
+                    exclude_milestones: exclude_milestone,
+                    state,
+                    repo,
+                    dated,
+                    issues_only,
+                    milestones_only,
+                    flat,
+                },
+            )
+        }
     }
 }
 

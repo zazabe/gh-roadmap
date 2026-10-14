@@ -12,6 +12,15 @@ pub enum IssueState {
     Closed,
 }
 
+impl IssueState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Closed => "closed",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct IssueFrontmatter {
     pub id: String,

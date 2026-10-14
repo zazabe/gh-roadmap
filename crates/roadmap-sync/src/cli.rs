@@ -73,4 +73,37 @@ pub enum Command {
         #[arg(long)]
         repo: Option<String>,
     },
+    /// Markdown overview of local milestones and issues (no network)
+    Overview {
+        /// Filter by milestone id substring (repeatable, OR)
+        #[arg(long)]
+        milestone: Vec<String>,
+        /// Include only this project status (repeatable, OR; case-insensitive)
+        #[arg(long)]
+        status: Vec<String>,
+        /// Drop this project status (repeatable; case-insensitive)
+        #[arg(long)]
+        exclude_status: Vec<String>,
+        /// Drop milestones whose id contains this substring (repeatable)
+        #[arg(long)]
+        exclude_milestone: Vec<String>,
+        /// Filter issues by state
+        #[arg(long, value_parser = ["open", "closed"])]
+        state: Option<String>,
+        /// Filter issues by repo id from roadmap.toml
+        #[arg(long)]
+        repo: Option<String>,
+        /// Only items with `start_date` or `target_date` set
+        #[arg(long)]
+        dated: bool,
+        /// Show issues only (skip milestones summary table)
+        #[arg(long)]
+        issues_only: bool,
+        /// Show milestones only (skip issue tables)
+        #[arg(long)]
+        milestones_only: bool,
+        /// Flat issue table instead of grouping under milestones
+        #[arg(long)]
+        flat: bool,
+    },
 }
