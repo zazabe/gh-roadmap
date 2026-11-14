@@ -30,12 +30,16 @@ impl BodyRefResolver {
         }
 
         for milestone in &roadmap.milestones {
-            if let Some(number) = milestone.github_number() {
+            if let Some(number) =
+                roadmap.sync_map.resolved_issue_number(milestone.id(), milestone.github_number())
+            {
                 refs_by_id.insert(milestone.id().to_string(), format!("{hub_full_repo}#{number}"));
             }
         }
         for issue in &roadmap.issues {
-            if let Some(number) = issue.github_number() {
+            if let Some(number) =
+                roadmap.sync_map.resolved_issue_number(issue.id(), issue.github_number())
+            {
                 let repo = config.full_repo(&issue.file.frontmatter.repo)?;
                 refs_by_id.insert(issue.id().to_string(), format!("{repo}#{number}"));
             }

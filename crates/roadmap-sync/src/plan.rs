@@ -130,8 +130,11 @@ fn milestone_steps(
     let mut steps = Vec::new();
     let hub_full_repo = config.hub_full_repo()?;
     let project_number = config.github()?.project_number;
+    let known_number =
+        roadmap.sync_map.resolved_issue_number(milestone.id(), milestone.github_number());
+    let needs_rename = milestone.is_local_only() && known_number.is_some();
 
-    if milestone.is_local_only() {
+    if milestone.is_local_only() && known_number.is_none() {
         steps.push(PlanStep {
             kind: ActionKind::CreateEpic,
             detail: format!("{hub_full_repo}: {}", milestone.file.frontmatter.title),
@@ -149,7 +152,7 @@ fn milestone_steps(
             kind: ActionKind::UpdateSyncMap,
             detail: "record epic issue_number and project_item_id".into(),
         });
-    } else if let Some(number) = milestone.github_number() {
+    } else if let Some(number) = known_number {
         let issue_ref = crate::platform::IssueRef { repo: hub_full_repo.clone(), number };
         let needs_update =
             cache.and_then(|cache| cache.issues.get(&issue_ref)).is_none_or(|remote| {
@@ -217,6 +220,18 @@ fn milestone_steps(
                 detail: "record project_item_id from remote".into(),
             });
         }
+        if needs_rename {
+            steps.push(PlanStep {
+                kind: ActionKind::RenameFile,
+                detail: format!("{} → *-#{number}.md", milestone.file.path.display()),
+            });
+            if !steps.iter().any(|step| step.kind == ActionKind::UpdateSyncMap) {
+                steps.push(PlanStep {
+                    kind: ActionKind::UpdateSyncMap,
+                    detail: "record epic project_item_id after resume".into(),
+                });
+            }
+        }
     }
 
     Ok(steps)
@@ -238,8 +253,10 @@ fn issue_steps(
         .milestone
         .as_ref()
         .and_then(|milestone_id| epic_url_for_milestone(milestone_id, hub_full_repo, roadmap));
+    let known_number = roadmap.sync_map.resolved_issue_number(issue.id(), issue.github_number());
+    let needs_rename = issue.is_local_only() && known_number.is_some();
 
-    if issue.is_local_only() {
+    if issue.is_local_only() && known_number.is_none() {
         steps.push(PlanStep {
             kind: ActionKind::CreateIssue,
             detail: format!("{full_repo}: {}", issue.file.frontmatter.title),
@@ -264,7 +281,7 @@ fn issue_steps(
             kind: ActionKind::UpdateSyncMap,
             detail: "record issue_number and project_item_id".into(),
         });
-    } else if let Some(number) = issue.github_number() {
+    } else if let Some(number) = known_number {
         let issue_ref = crate::platform::IssueRef { repo: full_repo.clone(), number };
         let remote_issue = cache.and_then(|cache| cache.issues.get(&issue_ref));
         let needs_update = remote_issue.is_none_or(|remote| {
@@ -356,6 +373,18 @@ fn issue_steps(
                 steps.push(PlanStep {
                     kind: ActionKind::UpdateSyncMap,
                     detail: "record project_item_id from remote".into(),
+                });
+            }
+        }
+        if needs_rename {
+            steps.push(PlanStep {
+                kind: ActionKind::RenameFile,
+                detail: format!("{} → *-#{number}.md", issue.file.path.display()),
+            });
+            if !steps.iter().any(|step| step.kind == ActionKind::UpdateSyncMap) {
+                steps.push(PlanStep {
+                    kind: ActionKind::UpdateSyncMap,
+                    detail: "record project_item_id after resume".into(),
                 });
             }
         }
@@ -564,5 +593,132 @@ pub(crate) fn update_epic_request(
         body: milestone_body(milestone),
         labels: vec!["roadmap".into(), "epic".into()],
         state: Some("open".to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{BTreeMap, HashMap};
+    use std::path::PathBuf;
+
+    use super::*;
+    use crate::config::{GithubConfig, PlatformConfig, RoadmapConfig};
+    use crate::model::{
+        IssueFile, IssueFrontmatter, MilestoneFile, MilestoneFrontmatter, MilestoneStatus, SyncMap,
+    };
+    use crate::parse::{LocalId, LocalIdKind};
+
+    fn test_config() -> RoadmapConfig {
+        RoadmapConfig {
+            platform: PlatformConfig {
+                kind: "github".into(),
+                github: Some(GithubConfig {
+                    host: "github.com".into(),
+                    owner: "acme".into(),
+                    project_number: 1,
+                    hub_repo: "hub".into(),
+                    repos: HashMap::from([("app".into(), "app".into())]),
+                }),
+                notion: None,
+            },
+        }
+    }
+
+    fn local_milestone(id: &str) -> Milestone {
+        Milestone {
+            file: MilestoneFile {
+                path: PathBuf::from(format!("milestones/milestone-T1-{}.md", &id[10..])),
+                local_id: LocalId {
+                    entity_prefix: "milestone".into(),
+                    slug: id.trim_start_matches("milestone-").into(),
+                    kind: LocalIdKind::Temporary(1),
+                },
+                frontmatter: MilestoneFrontmatter {
+                    id: id.into(),
+                    title: "Epic 1: Test".into(),
+                    status: MilestoneStatus::Planned,
+                    target_date: None,
+                    issues: vec![],
+                    fields: BTreeMap::new(),
+                },
+                body: String::new(),
+            },
+        }
+    }
+
+    fn local_issue(id: &str, repo: &str, milestone: Option<&str>) -> Issue {
+        let slug = id.rsplit_once('-').map_or(id, |(_, s)| s);
+        Issue {
+            file: IssueFile {
+                path: PathBuf::from(format!("issues/{repo}-T1-{slug}.md")),
+                local_id: LocalId {
+                    entity_prefix: repo.into(),
+                    slug: slug.into(),
+                    kind: LocalIdKind::Temporary(1),
+                },
+                frontmatter: IssueFrontmatter {
+                    id: id.into(),
+                    repo: repo.into(),
+                    title: "Do the thing".into(),
+                    url: None,
+                    state: IssueState::Open,
+                    labels: vec![],
+                    milestone: milestone.map(str::to_string),
+                    blocked_by: vec![],
+                    fields: BTreeMap::from([("status".into(), Some("Backlog".into()))]),
+                },
+                body: String::new(),
+            },
+        }
+    }
+
+    #[test]
+    fn local_issue_without_sync_map_plans_create() {
+        let roadmap = Roadmap {
+            milestones: vec![],
+            issues: vec![local_issue("app-do_the_thing", "app", None)],
+            sync_map: SyncMap::default(),
+        };
+        let plan = build_plan(&roadmap, &test_config(), None).unwrap();
+        let kinds: Vec<_> = plan.issue_jobs[0].steps.iter().map(|s| s.kind).collect();
+        assert!(kinds.contains(&ActionKind::CreateIssue));
+        assert!(!kinds.contains(&ActionKind::UpdateIssue));
+    }
+
+    #[test]
+    fn local_issue_with_sync_map_number_skips_create_and_renames() {
+        let mut sync_map = SyncMap::default();
+        sync_map.upsert_github_entry("app-do_the_thing", "acme/app".into(), Some(42), None, None);
+        let roadmap = Roadmap {
+            milestones: vec![],
+            issues: vec![local_issue("app-do_the_thing", "app", None)],
+            sync_map,
+        };
+        let plan = build_plan(&roadmap, &test_config(), None).unwrap();
+        let kinds: Vec<_> = plan.issue_jobs[0].steps.iter().map(|s| s.kind).collect();
+        assert!(!kinds.contains(&ActionKind::CreateIssue), "{kinds:?}");
+        assert!(kinds.contains(&ActionKind::RenameFile), "{kinds:?}");
+        assert!(kinds.contains(&ActionKind::UpdateIssue), "{kinds:?}");
+    }
+
+    #[test]
+    fn local_epic_with_sync_map_number_skips_create_and_renames() {
+        let mut sync_map = SyncMap::default();
+        sync_map.upsert_github_entry(
+            "milestone-test",
+            "acme/hub".into(),
+            Some(7),
+            Some("item-1".into()),
+            None,
+        );
+        let roadmap = Roadmap {
+            milestones: vec![local_milestone("milestone-test")],
+            issues: vec![],
+            sync_map,
+        };
+        let plan = build_plan(&roadmap, &test_config(), None).unwrap();
+        let kinds: Vec<_> = plan.milestone_jobs[0].steps.iter().map(|s| s.kind).collect();
+        assert!(!kinds.contains(&ActionKind::CreateEpic), "{kinds:?}");
+        assert!(kinds.contains(&ActionKind::RenameFile), "{kinds:?}");
     }
 }

@@ -87,11 +87,12 @@ pub async fn apply_notion(roadmap_dir: &Path, skip_confirm: bool) -> Result<()> 
                 println!("      {} — updated {page_id}", style::status_ok());
             }
         }
+        let sync_map_path = default_sync_map_path(roadmap_dir);
+        sync_map.save(&sync_map_path)?;
         println!();
     }
 
     let sync_map_path = default_sync_map_path(roadmap_dir);
-    sync_map.save(&sync_map_path)?;
     println!(
         "{} — sync-map updated ({})",
         style::ok("notion apply complete"),

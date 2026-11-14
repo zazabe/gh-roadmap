@@ -79,6 +79,7 @@ pub async fn apply(roadmap_dir: &Path, platform: &dyn Platform, skip_confirm: bo
     );
 
     let mut sync_map = roadmap.sync_map.clone();
+    let sync_map_path = default_sync_map_path(roadmap_dir);
     let hub_full_repo = config.hub_full_repo()?;
     let project = ProjectRef {
         owner: config.github()?.owner.clone(),
@@ -105,6 +106,7 @@ pub async fn apply(roadmap_dir: &Path, platform: &dyn Platform, skip_confirm: bo
             &hub_full_repo,
             &mut body_refs,
             &mut sync_map,
+            &sync_map_path,
             &cache,
         )
         .await?;
@@ -130,6 +132,7 @@ pub async fn apply(roadmap_dir: &Path, platform: &dyn Platform, skip_confirm: bo
             &hub_full_repo,
             &mut body_refs,
             &mut sync_map,
+            &sync_map_path,
             &cache,
         )
         .await?;
@@ -138,9 +141,25 @@ pub async fn apply(roadmap_dir: &Path, platform: &dyn Platform, skip_confirm: bo
 
     normalize_local_refs_after_apply(roadmap_dir, &config, platform).await?;
 
-    let sync_map_path = default_sync_map_path(roadmap_dir);
     sync_map.save(&sync_map_path)?;
     println!("{} — sync-map updated ({})", style::ok("apply complete"), sync_map_path.display());
+    Ok(())
+}
+
+fn now_rfc3339() -> String {
+    OffsetDateTime::now_utc().format(&Rfc3339).unwrap_or_default()
+}
+
+fn persist_github_mapping(
+    sync_map: &mut SyncMap,
+    sync_map_path: &Path,
+    id: &str,
+    repo: String,
+    issue_number: Option<u64>,
+    project_item_id: Option<String>,
+) -> Result<()> {
+    sync_map.upsert_github_entry(id, repo, issue_number, project_item_id, Some(now_rfc3339()));
+    sync_map.save(sync_map_path)?;
     Ok(())
 }
 
@@ -152,14 +171,15 @@ async fn execute_milestone_job(
     hub_full_repo: &str,
     body_refs: &mut BodyRefResolver,
     sync_map: &mut SyncMap,
+    sync_map_path: &Path,
     cache: &RemoteCache,
 ) -> Result<()> {
-    let issue_url = milestone
-        .github_number()
-        .map(|number| format!("https://github.com/{hub_full_repo}/issues/{number}"));
+    let issue_number = sync_map.resolved_issue_number(milestone.id(), milestone.github_number());
+    let issue_url =
+        issue_number.map(|number| format!("https://github.com/{hub_full_repo}/issues/{number}"));
     let mut ctx = JobContext {
         issue_url: issue_url.clone(),
-        issue_number: milestone.github_number(),
+        issue_number,
         project_item_id: sync_map
             .issue_entry(milestone.id())
             .and_then(|entry| entry.project_item_id.clone())
@@ -184,9 +204,17 @@ async fn execute_milestone_job(
                 print_step_ok(&format!("{hub_full_repo}#{}", remote.number));
                 ctx.record_remote(&remote);
                 body_refs.insert(milestone.id(), format!("{hub_full_repo}#{}", remote.number));
+                persist_github_mapping(
+                    sync_map,
+                    sync_map_path,
+                    milestone.id(),
+                    hub_full_repo.to_string(),
+                    Some(remote.number),
+                    ctx.project_item_id.clone(),
+                )?;
             }
             ActionKind::UpdateEpic => {
-                let number = milestone.github_number().ok_or_else(|| {
+                let number = ctx.issue_number.ok_or_else(|| {
                     crate::error::Error::Config(format!(
                         "milestone `{}` has no github number",
                         milestone.id()
@@ -209,6 +237,16 @@ async fn execute_milestone_job(
                 })?;
                 let item = platform.add_issue_to_project(project, issue_url).await?;
                 ctx.project_item_id = Some(item.id.clone());
+                if ctx.issue_number.is_some() {
+                    persist_github_mapping(
+                        sync_map,
+                        sync_map_path,
+                        milestone.id(),
+                        hub_full_repo.to_string(),
+                        ctx.issue_number,
+                        ctx.project_item_id.clone(),
+                    )?;
+                }
                 print_step_ok(&format!("item {}", item.id));
             }
             ActionKind::SyncFields => {
@@ -245,13 +283,14 @@ async fn execute_milestone_job(
                 print_step_ok(&new_path.display().to_string());
             }
             ActionKind::UpdateSyncMap => {
-                sync_map.upsert_github_entry(
+                persist_github_mapping(
+                    sync_map,
+                    sync_map_path,
                     milestone.id(),
                     hub_full_repo.to_string(),
                     ctx.issue_number,
                     ctx.project_item_id.clone(),
-                    Some(OffsetDateTime::now_utc().format(&Rfc3339).unwrap_or_default()),
-                );
+                )?;
                 print_step_ok(milestone.id());
             }
             other => {
@@ -274,16 +313,17 @@ async fn execute_issue_job(
     hub_full_repo: &str,
     body_refs: &mut BodyRefResolver,
     sync_map: &mut SyncMap,
+    sync_map_path: &Path,
     cache: &RemoteCache,
 ) -> Result<()> {
     debug_assert_eq!(job.kind, JobKind::Issue);
 
-    let issue_url = issue
-        .github_number()
-        .map(|number| format!("https://github.com/{full_repo}/issues/{number}"));
+    let issue_number = sync_map.resolved_issue_number(issue.id(), issue.github_number());
+    let issue_url =
+        issue_number.map(|number| format!("https://github.com/{full_repo}/issues/{number}"));
     let mut ctx = JobContext {
         issue_url: issue_url.clone(),
-        issue_number: issue.github_number(),
+        issue_number,
         project_item_id: sync_map
             .issue_entry(issue.id())
             .and_then(|entry| entry.project_item_id.clone())
@@ -308,9 +348,17 @@ async fn execute_issue_job(
                 print_step_ok(&format!("{full_repo}#{}", remote.number));
                 ctx.record_remote(&remote);
                 body_refs.insert(issue.id(), format!("{full_repo}#{}", remote.number));
+                persist_github_mapping(
+                    sync_map,
+                    sync_map_path,
+                    issue.id(),
+                    full_repo.to_string(),
+                    Some(remote.number),
+                    ctx.project_item_id.clone(),
+                )?;
             }
             ActionKind::UpdateIssue => {
-                let number = issue.github_number().ok_or_else(|| {
+                let number = ctx.issue_number.ok_or_else(|| {
                     crate::error::Error::Config(format!(
                         "issue `{}` has no github number",
                         issue.id()
@@ -355,6 +403,16 @@ async fn execute_issue_job(
                 })?;
                 let item = platform.add_issue_to_project(project, issue_url).await?;
                 ctx.project_item_id = Some(item.id.clone());
+                if ctx.issue_number.is_some() {
+                    persist_github_mapping(
+                        sync_map,
+                        sync_map_path,
+                        issue.id(),
+                        full_repo.to_string(),
+                        ctx.issue_number,
+                        ctx.project_item_id.clone(),
+                    )?;
+                }
                 print_step_ok(&format!("item {}", item.id));
             }
             ActionKind::SetProjectStatus => {
@@ -411,13 +469,14 @@ async fn execute_issue_job(
                 print_step_ok(&new_path.display().to_string());
             }
             ActionKind::UpdateSyncMap => {
-                sync_map.upsert_github_entry(
+                persist_github_mapping(
+                    sync_map,
+                    sync_map_path,
                     issue.id(),
                     full_repo.to_string(),
                     ctx.issue_number,
                     ctx.project_item_id.clone(),
-                    Some(OffsetDateTime::now_utc().format(&Rfc3339).unwrap_or_default()),
-                );
+                )?;
                 print_step_ok(issue.id());
             }
             other => {

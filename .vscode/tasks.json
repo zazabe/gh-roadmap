@@ -1,0 +1,81 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Fix: Format",
+            "type": "shell",
+            "command": "cargo fmt --all",
+            "presentation": {
+                "reveal": "always"
+            },
+            "problemMatcher": [],
+            "options": {
+                "env": {
+                    "RENFOLD_SKIP_FRONTEND_BUILD": "1"
+                }
+            }
+        },
+        {
+            "label": "Fix: Clippy",
+            "type": "shell",
+            "command": "cargo clippy --workspace --all-targets --all-features --fix --allow-dirty",
+            "dependsOrder": "sequence",
+            "presentation": {
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "All Fixes",
+            "dependsOn": [
+                "Fix: Format",
+                "Fix: Clippy",
+            ],
+            "dependsOrder": "parallel",
+            "problemMatcher": []
+        },
+        {
+            "label": "Check: Format",
+            "type": "shell",
+            "command": "cargo fmt --all -- --check",
+            "presentation": {
+                "reveal": "always"
+            },
+            "problemMatcher": [],
+            "options": {
+                "env": {
+                    "RENFOLD_SKIP_FRONTEND_BUILD": "1"
+                }
+            }
+        },
+        {
+            "label": "Check: Clippy",
+            "type": "shell",
+            "command": "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+            "dependsOrder": "sequence",
+            "presentation": {
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Test",
+            "type": "shell",
+            "command": "cargo test --workspace --all-targets --all-features",
+            "presentation": {
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "All Checks",
+            "dependsOn": [
+                "Check: Format",
+                "Check: Clippy",
+                "Test",
+            ],
+            "dependsOrder": "parallel",
+            "problemMatcher": []
+        },
+    ]
+}

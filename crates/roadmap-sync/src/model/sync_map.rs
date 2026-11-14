@@ -156,12 +156,18 @@ impl SyncMap {
         self.items.get(id)
     }
 
+    pub fn mapped_issue_number(&self, id: &str) -> Option<u64> {
+        self.issue_entry(id).and_then(|entry| entry.issue_number)
+    }
+
+    /// Prefer the filename GitHub number; fall back to sync-map (resume after partial apply).
+    pub fn resolved_issue_number(&self, id: &str, file_number: Option<u64>) -> Option<u64> {
+        file_number.or_else(|| self.mapped_issue_number(id))
+    }
+
     pub fn epic_url(&self, milestone_id: &str, hub_repo: &str) -> Option<String> {
-        self.issue_entry(milestone_id).and_then(|entry| {
-            entry
-                .issue_number
-                .map(|number| format!("https://github.com/{hub_repo}/issues/{number}"))
-        })
+        self.mapped_issue_number(milestone_id)
+            .map(|number| format!("https://github.com/{hub_repo}/issues/{number}"))
     }
 
     pub fn upsert_issue(&mut self, id: impl Into<String>, entry: IssueSyncEntry) {
@@ -258,5 +264,14 @@ mod tests {
         map.upsert_github_entry("m1", "acme/hub".into(), Some(3), Some("item".into()), None);
         assert_eq!(map.items["m1"].notion_page_id.as_deref(), Some("page-9"));
         assert_eq!(map.items["m1"].issue_number, Some(3));
+    }
+
+    #[test]
+    fn resolved_issue_number_prefers_filename_then_sync_map() {
+        let mut map = SyncMap::default();
+        map.upsert_github_entry("app-x", "acme/app".into(), Some(9), None, None);
+        assert_eq!(map.resolved_issue_number("app-x", Some(12)), Some(12));
+        assert_eq!(map.resolved_issue_number("app-x", None), Some(9));
+        assert_eq!(map.resolved_issue_number("missing", None), None);
     }
 }

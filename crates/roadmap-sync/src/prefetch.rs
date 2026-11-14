@@ -166,13 +166,17 @@ fn collect_issue_refs(roadmap: &Roadmap, config: &RoadmapConfig) -> Result<Vec<I
     let mut refs = Vec::new();
 
     for milestone in &roadmap.milestones {
-        if let Some(number) = milestone.github_number() {
+        if let Some(number) =
+            roadmap.sync_map.resolved_issue_number(milestone.id(), milestone.github_number())
+        {
             refs.push(IssueRef { repo: hub_full_repo.clone(), number });
         }
     }
 
     for issue in &roadmap.issues {
-        if let Some(number) = issue.github_number() {
+        if let Some(number) =
+            roadmap.sync_map.resolved_issue_number(issue.id(), issue.github_number())
+        {
             let full_repo = config.full_repo(&issue.file.frontmatter.repo)?;
             refs.push(IssueRef { repo: full_repo, number });
         }
