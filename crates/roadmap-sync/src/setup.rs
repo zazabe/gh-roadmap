@@ -103,7 +103,7 @@ pub async fn run(roadmap_dir: &Path, opts: SetupOptions) -> Result<()> {
     println!();
     println!("{}", style::ok("setup complete — running doctor…"));
     println!();
-    let (report, config) = doctor::run(roadmap_dir).await?;
+    let (report, config, _) = doctor::run(roadmap_dir, doctor::DoctorOptions::default()).await?;
     doctor::print_report(&report, &config);
     if report.is_ok() {
         println!();
@@ -161,7 +161,7 @@ async fn run_notion_only(roadmap_dir: &Path) -> Result<()> {
     println!();
     println!("{}", style::ok("Notion setup complete — running doctor…"));
     println!();
-    let (report, config) = doctor::run(roadmap_dir).await?;
+    let (report, config, _) = doctor::run(roadmap_dir, doctor::DoctorOptions::default()).await?;
     doctor::print_report(&report, &config);
     if report.is_ok() {
         Ok(())

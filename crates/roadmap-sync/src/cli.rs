@@ -45,7 +45,14 @@ pub enum Command {
         platform: Option<String>,
     },
     /// Check GitHub authentication and token permissions
-    Doctor,
+    Doctor {
+        /// Find open GitHub issues that duplicate local roadmap titles
+        #[arg(long)]
+        dedup: bool,
+        /// With `--dedup`, close duplicate issues (keeps sync-map / `#N` / lowest number)
+        #[arg(long, requires = "dedup")]
+        yes: bool,
+    },
     /// Apply planned actions to the remote platform
     Apply {
         /// Skip confirmation prompt

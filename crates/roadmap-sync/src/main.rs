@@ -59,7 +59,9 @@ async fn main() -> Result<()> {
             )
             .await
         }
-        Command::Doctor => cmd_doctor(&roadmap_dir).await,
+        Command::Doctor { dedup, yes } => {
+            cmd_doctor(&roadmap_dir, doctor::DoctorOptions { dedup, yes }).await
+        }
         Command::Plan { offline, platform } => {
             cmd_plan(&roadmap_dir, offline, platform.as_deref()).await
         }
@@ -109,11 +111,19 @@ async fn main() -> Result<()> {
     }
 }
 
-async fn cmd_doctor(roadmap_dir: &Path) -> Result<()> {
-    let (report, config) = doctor::run(roadmap_dir).await?;
+async fn cmd_doctor(roadmap_dir: &Path, options: doctor::DoctorOptions) -> Result<()> {
+    let apply_dedup = options.yes;
+    let (report, config, dedup_plan) = doctor::run(roadmap_dir, options).await?;
     doctor::print_report(&report, &config);
+    if let Some(plan) = dedup_plan.as_ref() {
+        doctor::print_dedup_plan(plan, apply_dedup);
+    }
     if report.is_ok() {
         Ok(())
+    } else if dedup_plan.as_ref().is_some_and(|p| !p.groups.is_empty()) && !apply_dedup {
+        Err(error::Error::Config(
+            "duplicate GitHub issues found (re-run with `roadmap doctor --dedup --yes`)".into(),
+        ))
     } else {
         Err(error::Error::Auth)
     }

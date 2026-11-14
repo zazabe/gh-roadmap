@@ -90,6 +90,64 @@ impl GhPlatform {
         Ok(())
     }
 
+    /// Open issues in a repo (capped). Used by `roadmap doctor --dedup`.
+    pub async fn list_open_issues(&self, full_repo: &str, limit: u32) -> Result<Vec<RemoteIssue>> {
+        let limit = limit.to_string();
+        let args = [
+            "issue",
+            "list",
+            "-R",
+            full_repo,
+            "--state",
+            "open",
+            "--limit",
+            &limit,
+            "--json",
+            "number,title,body,state,url",
+        ];
+        #[derive(Deserialize)]
+        struct Row {
+            number: u64,
+            title: String,
+            #[serde(default)]
+            body: String,
+            state: String,
+            url: String,
+        }
+        let rows: Vec<Row> = self.run_json(&args).await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| RemoteIssue {
+                number: row.number,
+                url: row.url,
+                title: row.title,
+                body: row.body,
+                state: row.state,
+                parent_url: None,
+            })
+            .collect())
+    }
+
+    /// Close an issue and leave a short comment explaining why.
+    pub async fn close_issue_with_comment(
+        &self,
+        full_repo: &str,
+        number: u64,
+        comment: &str,
+    ) -> Result<()> {
+        let close_path = format!("repos/{full_repo}/issues/{number}");
+        self.api_json_raw(
+            "PATCH",
+            &close_path,
+            serde_json::json!({ "state": "closed", "state_reason": "not_planned" }),
+        )
+        .await?;
+        let number_s = number.to_string();
+        let args = ["issue", "comment", &number_s, "-R", full_repo, "--body", comment];
+        self.run_output(&args).await?;
+        Ok(())
+    }
+
     pub async fn probe_project_write(&self, project: &ProjectRef) -> Result<()> {
         let query = "query($org: String!, $number: Int!) { organization(login: $org) { projectV2(number: $number) { viewerCanUpdate } } }";
         let response = self

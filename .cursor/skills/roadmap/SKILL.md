@@ -105,6 +105,8 @@ roadmap apply --yes                 # sync to all enabled platforms
 roadmap apply --yes --platform notion   # Notion milestone report only
 roadmap pull --yes                  # pull remote → local markdown (GitHub)
 roadmap doctor                      # auth / permission checks
+roadmap doctor --dedup              # report open GitHub issues that duplicate local titles
+roadmap doctor --dedup --yes        # close extras (keeps sync-map / #N / lowest number)
 roadmap setup --skill-only          # refresh agent skill files (implies overwrite)
 roadmap setup --notion-only         # configure / refresh Notion mapping
 ```

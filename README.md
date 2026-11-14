@@ -87,6 +87,7 @@ roadmap --roadmap-dir path/to/roadmap validate
 | `pull [--yes] [--overwrite] [--import-missing]` | Pull remote → local (GitHub only) |
 | `show --issue N [--repo ID]` | Inspect local vs GitHub fields / sync drift |
 | `doctor` | Auth and permission checks |
+| `doctor --dedup [--yes]` | Find (and optionally close) duplicate open issues by title |
 
 `overview` filters: `--milestone`, `--status`, `--exclude-status`,
 `--exclude-milestone`, `--state`, `--repo`, `--dated`, `--issues-only`,
